@@ -37,54 +37,60 @@ measurements via adjoint optimisation", *Coast. Eng.*; dataset
   re-zeroed to window start (SWE + linear drag are time-translation
   invariant).
 
-**Inverse problem statement** ([`data_angel.py`](data_angel.py)):
-Given $\eta(x_{S_k}, t)$ for selected sensors $S_k$ on the windowed grid,
-recover $z_b(x)$ subject to:
-- SWE (transient 1D, linear drag) as a **soft** PDE penalty,
-- $z_b(x) \ge 0$ (soft positivity),
-- $z_b(x = x_\text{ends}) = 0$ (the flume floor is flat at the
-  approach/downstream ends; same idiom as Exp 1 `loss_bc`).
+**Inverse problem statement** (see
+[`src/pinn_bath/datasets/angel.py`](../../src/pinn_bath/datasets/angel.py)):
+Given $\eta(x_{S_k}, t)$ for selected sensors $S_k$ on the windowed
+grid, recover $z_b(x)$ subject to:
+- SWE (transient 1D, linear drag $\kappa$) as a **soft** PDE penalty,
+- $z_b(x) \ge 0$ (soft positivity via `pos` loss weight),
+- the inlet sensor S1 included in the observation mask (also soft).
 
-## Sensor placement (`data_angel.py:32-36`)
+## Sensor placement
 
-- **S1 (x = 1.5 m)**: **soft** inlet Dirichlet η(t) — included in
-  `x_obs_indices`, fit by the same MSE data loss as interior sensors.
-  *Not* a hard BC. See discussion in `REPORT.md` and
-  [`pinn_angel.py`](pinn_angel.py).
-- **S2 (x = 3.5 m)**: canonical interior observation. The bump peak is
-  at $x \approx 3.99$ m — **no sensor sits on the bump itself**.
-- **S3 / S4 (x = 5.5, 7.5 m)**: optional additional sensors for the
-  multi-sensor variant (currently not in `run_matrix.py`; see #15 in
-  the pre-flight bug log).
+- **S1 (x = 1.5 m)**: **soft** inlet Dirichlet η(t) — included as one
+  of the sensor columns in `AngelObservations.obs_coords/obs_values`,
+  fit by the same MSE data loss as interior sensors. *Not* a hard BC.
+  Contrast Angel's adjoint method, which imposes the inlet as a hard
+  BC through the forward solver.
+- **S2 (x = 3.5 m)**: canonical interior observation. The bump peak
+  is at $x \approx 3.99$ m — **no sensor sits on the bump itself**.
+- **S3 / S4 (x = 5.5, 7.5 m)**: optional additional sensors via the
+  `obs_sensors` kwarg of `case_from_angel_flume(...)`.
 - **Grid alignment**: $\text{Nx} = 136$ → $\Delta x = 100$ mm → all
-  sensors land exactly on grid nodes (snap error 0). Other valid choices
-  are 271 (Δx = 50 mm) and 541 (Δx = 25 mm). `load_angel_windowed`
-  raises if `snap_tol_m = 1$ mm` is exceeded.
+  four sensors land exactly on grid nodes (snap error 0). Other valid
+  choices: 271 ($\Delta x = 50$ mm), 541 ($\Delta x = 25$ mm).
+  `case_from_angel_flume` raises if `snap_tol_m = 1` mm is exceeded.
 
-## Method (`pinn_angel.py`)
+## Method
 
-`AngelInversePINN` subclasses [`ThackerInversePINN`](../02-thacker-basin-1d/pinn_inverse.py)
-from Exp 2 (two-network architecture, Fourier features, sparse
-observation mask, Adam + L-BFGS). Only `compute_loss` is overridden:
+The canonical pipeline is `pinn_bath` end-to-end. The adapter
+[`case_from_angel_flume`](../../src/pinn_bath/datasets/angel.py)
+returns `(Case, AngelObservations)`; the `AngelObservations` tensors
+are passed to
+[`AdamLBFGSTrainer`](../../src/pinn_bath/trainers.py) via the
+`obs_coords` / `obs_values` override, bypassing the trainer's default
+random sampler so the sensors stay at their exact positions.
 
-- Physics: `swe_residual_angel` (linear drag $\kappa \cdot u/(h+\epsilon)$
-  in place of Manning); see [`physics_angel.py`](physics_angel.py).
-- **No** initial-condition loss (the window starts mid-experiment).
-- **No** wall-BC loss (the flume has inflow at S1 + open outlet).
-- **No** dry-cell loss ($H_\text{rest} = 0.3$ m $\gg$ bump 0.2 m → never dry).
-- Adds two physical priors to break the $\eta = h + z_b$ equifinality:
-  $z_b \ge 0$ (soft) and $z_b(\text{ends}) = 0$.
+- Physics: `swe_residual(... friction="linear_kappa", friction_params={"kappa": 0.2, "eps_dry": 1e-4})`
+  in place of Manning).
+- **No** initial-condition loss (the window starts mid-experiment, no
+  known IC).
+- **No** explicit BC loss (the flume has soft inlet at S1 via the
+  observations + an open outlet — `bc_type="soft_inlet_outlet"`).
+- **No** dry-cell mask ($H_\text{rest} = 0.3$ m $\gg$ bump 0.2 m →
+  never dry).
+- Soft positivity prior $z_b \ge 0$ via `pos` loss weight.
 
-## Configurations swept (`run_matrix.py`)
+## Configurations swept ([`studies/exp6_run_matrix.py`](../../studies/exp6_run_matrix.py))
 
-| Config | seeds | $\sigma_x$ | $\lambda_\text{PDE}$ | obs sensors | result |
+| Config | seeds | $\sigma_x$ | $\lambda_\text{PDE}$ | obs sensors | result (TODO post-azirafel) |
 |---|---|---|---|---|---|
-| canonical | 3 (0, 1, 2) | 2 | 1 | S2 only | ~34 mm $z_b$ RMSE (bump missed) |
+| canonical | 3 (0, 1, 2) | 2 (A1 default) | 1 | S2 only | expected: bump missed (negative finding reproduced) |
 
 Exploratory runs not in the harness (see REPORT.md): stronger Fourier
-bandwidth ($\sigma_x = 6$), stronger PDE weight ($\lambda_\text{PDE} = 5$),
-and 3-sensor variant (S2 + S3 + S4). Adding these to `run_matrix.py`
-is a thesis-defence TODO.
+bandwidth ($\sigma_x = 6$), stronger PDE weight ($\lambda_\text{PDE} =
+5$), and the 3-sensor variant (S2 + S3 + S4). Adding these to
+`exp6_run_matrix.py` is a defence TODO.
 
 ## Outcome
 
@@ -99,25 +105,30 @@ or Lagrangian-augmented PINN formulations.
 See [`REPORT.md`](REPORT.md) for the full result tables, the diagnosis,
 and the comparison with Angel's adjoint method.
 
-## Files
+## Files (post-migration)
 
-- `data_angel.py` — load, window, decimate flume `.npz`; snap sensors to
-  grid; NRMSE helper. (Suffix `_angel` because these are
-  Angel-dataset-specific; the project's convention is `pinn_inverse.py`
-  + `ground_truth.py` + `generate_and_plot.py` for synthetic exps.)
-- `physics_angel.py` — `swe_residual_angel` with linear $\kappa$ drag.
-- `pinn_angel.py` — `AngelInversePINN` subclass of `ThackerInversePINN`.
-- `run_matrix.py` — canonical sweep harness.
-- `run_poc.py` — single-config CLI runner (uses `argparse`).
-- `bench_epoch.py` — per-epoch wall-time benchmark across grid sizes.
-- `analyze_limitation.py` — diagnostics for the negative result.
+All Exp 6 code now lives under `pinn_bath` and `studies/`:
+
+- [`src/pinn_bath/datasets/angel.py`](../../src/pinn_bath/datasets/angel.py)
+  — `case_from_angel_flume(...)`: loads the flume `.npz`, windows +
+  decimates + snaps sensors, returns `(Case, AngelObservations)`.
+  Replaces the legacy `data_angel.py`.
+- [`src/pinn_bath/losses/residual.py`](../../src/pinn_bath/losses/residual.py)
+  — `friction="linear_kappa"` dispatch (`κ·u/(h+ε)`) replaces the
+  legacy `physics_angel.swe_residual_angel`. Auto-detected from
+  `case.constants["kappa"]`.
+- [`studies/exp6_run_matrix.py`](../../studies/exp6_run_matrix.py) —
+  the canonical sweep (3 seeds × A1/small × S2-only). Replaces the
+  legacy `run_matrix.py` + `run_poc.py`.
 - `REPORT.md` — findings, comparison with Angel adjoint, defence notes.
+
+The legacy files (`pinn_angel.py`, `data_angel.py`,
+`physics_angel.py`, `run_matrix.py`, `run_poc.py`, `bench_epoch.py`,
+`analyze_limitation.py`) were removed in the M6 nuke.
 
 ## References
 
-- Angel et al. (2024) *Coast. Eng.* — adjoint reconstruction on the same
-  flume, defines the dataset.
-- Exp 2 [`pinn_inverse.py`](../02-thacker-basin-1d/pinn_inverse.py) —
-  parent class `ThackerInversePINN`.
+- Angel et al. (2024) *Coast. Eng.* — adjoint reconstruction on the
+  same flume, defines the dataset.
 - Pre-flight bug log entries #8 (sensor snap), #14 (soft-BC honesty),
   #15 (reproducibility), #20 (this file).

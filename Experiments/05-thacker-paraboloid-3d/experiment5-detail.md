@@ -122,8 +122,10 @@ With $g = 9.81$: $\omega = \sqrt{8 \cdot 9.81 \cdot 0.1} / 1 \approx 2.801$ rad/
 - `experiment5-detail.md` — this file
 - `ground_truth.py` — analytical solution (SWASHES 4.2.2)
 - `generate_and_plot.py` — dataset + visualizations (radial profile, snapshots, shoreline animation frames)
-- `pinn_inverse.py` — inverse PINN adapted from Exp 4
-- `n_t_sweep.py` — key experiment (number of temporal snapshots $N_t$ sweep; closed basin, not tidal)
+- Baseline + N_t sweep migrated to `pinn_bath`:
+  [`studies/arch_scaling.py`](../../studies/arch_scaling.py) (Exp 5 cell)
+  and [`studies/exp5_n_t_sweep.py`](../../studies/exp5_n_t_sweep.py).
+  Legacy `pinn_inverse.py` + `n_t_sweep.py` removed in M6.
 - `REPORT.md` — findings, cross-experiment synthesis
 
 ## References

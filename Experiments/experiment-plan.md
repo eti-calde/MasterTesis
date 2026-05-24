@@ -143,7 +143,7 @@ to 2D and at what cost.
 ### Phase 5.1 — Baseline (DONE — v4 sealed)
 - [x] (x, y, t) → (h, u, v) network + (x, y) → z_b net with Fourier features
 - [x] Wet-indicator masking, soft IC/BC losses
-- [x] Final baseline frozen in `pinn_inverse.py` (v4); diagnostic v1–v3 archived
+- [x] Final baseline migrated to `pinn_bath` via `studies/arch_scaling.py` (Exp 5 cell) + `studies/exp5_n_t_sweep.py`; legacy `pinn_inverse.py` removed in the M6 nuke.
 
 ### Phase 5.2 — Report (DONE)
 - [x] `Experiments/05-thacker-2d/REPORT.md` (improve-baseline v4 finalized)
@@ -173,10 +173,9 @@ Compares the three SWE residual formulations (primitive, primitive-
 conservative, conservative) on the inverse problem. Original contribution:
 primitive is most robust (2/2 seeds converge, mean RMSE 4.05 ± 0.04 mm),
 reversing Tian et al. (2025)'s forward-problem ranking. Used to set the
-production default of `swe_form` in both legacy `pinn_inverse.py` and the
-`pinn_bath` canonical pipeline.
+production default of `swe_form` in the `pinn_bath` canonical pipeline.
 
-- Script: [`01-subcritical-bump-1d/equation_form_comparison.py`](01-subcritical-bump-1d/equation_form_comparison.py)
+- Script: [`studies/ablation_forms.py`](../studies/ablation_forms.py)
 - Report: [`01-subcritical-bump-1d/REPORT-ABLATION.md`](01-subcritical-bump-1d/REPORT-ABLATION.md)
 - Discussed in `Report/sections/05-comparacion-literatura.tex`.
 
@@ -224,10 +223,12 @@ studies/                                   # cross-experiment harnesses
 ```
 
 Each `0X-*` folder typically contains: `ground_truth.py` (data
-generator or loader), `pinn_inverse.py` (legacy orchestration; Exps
-01/02/03/05 share blocks via `pinn_bath.legacy_blocks`), `data/`,
-`figures/`, `results/`, and a `REPORT.md` with findings. Exps 01–04 +
-06 are DONE per the phase tables above; Exp 05 is sealed at v4.
+generator or loader), `data/` (`.npz` consumed by `pinn_bath.data.Case`),
+`figures/`, `results/` (legacy training `*.log` audit trail), and a
+`REPORT.md` with reproducible study commands + pending-azirafel
+results. The per-experiment `pinn_inverse.py` orchestration was
+removed in the legacy → `pinn_bath` migration; the canonical pipeline
+lives in `studies/` (one script per study).
 
 ---
 

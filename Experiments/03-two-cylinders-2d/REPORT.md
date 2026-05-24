@@ -1,125 +1,67 @@
-# Experiment 3 — Two cylinders 2D Report
+# Experiment 3 — Two Cylinders (2D, Transient) REPORT
 
-**Date**: 2026-05-23 (refactor; PINN results pending).
-**Case**: Ruppenthal & Kuzmin (2026) §7.2 — two vertical-walled cylinders.
-**Status**: **Pending** — case spec finalized, ground truth regenerated; PINN
-inversion results will populate this file once the §5.1 architecture
-scaling barrido is executed on `azirafel`.
+**Case**: Ruppenthal & Kuzmin (2026) §7.2 — two vertical-walled solid
+cylinders on a flat bed, uniform diagonal inflow.
+**Status**: **Pending — re-run on `azirafel` via `pinn_bath`**.
 
 ---
 
-> **Solver fix note (2026-05-24).** El solver FV-HLL previo computaba el
-> término fuente $-g\,h\,\partial_x z_b$ por diferencias centradas sobre la
-> batimetría indicador-discontinua de Ruppenthal §7.2. En los bordes
-> verticales del cilindro mayor ($H = 0.3$\,m, $\Delta x = 0.5$\,m) esto
-> generaba un gradiente espurio $\sim H/(2\Delta x) = 0.3$ m/m, equivalente
-> a una fuerza local $g\,h\,\partial_x z_b \approx 5$ m/s² (comparable a la
-> gravedad), que contaminaba la "verdad de referencia" con oscilaciones
-> numéricas y propagaba a través del PINN como sesgo en la inversión.
+> **Re-baseline note (post-migration).** The historical 40 mm RMSE
+> baseline came from the legacy `pinn_inverse.py` running on a
+> subsampled 40×40 grid for 2 s. Multiple physical bugs in the
+> ground-truth solver and the PINN itself were fixed before this
+> baseline was usable:
+> - Audusse hydrostatic reconstruction replaces the centered-difference
+>   topography source (batch #5; was generating a 5 m/s² spurious
+>   force at cylinder edges, comparable to gravity).
+> - Dirichlet inflow on the small-x/small-y boundaries (batch #6; was
+>   Neumann everywhere, letting the uniform flow decay).
+> - PINN `BathymetryNet2D` `softplus(zb_raw) - 0.1` shift removed
+>   (batch #12; allowed unphysical $z_b \in [-0.1, \infty)$ when
+>   Ruppenthal's cylinders are $z_b \in \{0, 0.2, 0.3\}$).
+> - PINN momentum residual rewritten in well-balanced form
+>   $g \, \partial_x \eta$ instead of $g(\partial_x h + \partial_x z_b)$
+>   (batch #12 cosmetic, numerically identical).
 >
-> Reemplazado por reconstrucción hidrostática de Audusse
-> ([2004](https://doi.org/10.1137/S1064827503431090)), well-balanced para
-> topografía discontinua: el "lake-at-rest" ($u = v = 0$,
-> $\eta = h + z_b = \mathrm{const}$) se preserva a precisión de máquina
-> incluso sobre el indicador agudo (test `test_lake_at_rest_one_step` →
-> `max |hu|` $< 10^{-12}$). El dataset
-> `data/ground_truth_cylinders.npz` fue regenerado y debe usarse para los
-> resultados §5.1; la versión pre-fix queda obsoleta.
-
-> **BC fix (2026-05-24).** El solver previo usaba `np.pad(mode='edge')`
-> en las cuatro caras → Neumann global. Con la IC uniforme
-> $(u, v) = (2.21, 2.21)$ no había mecanismo de frontera para mantener
-> la corriente entrante: el flujo decae con el tiempo (el `u range`
-> bajaba a $[1.79, 2.59]$ a $t = 60$ s) y los wakes detrás de los
-> cilindros quedaban en régimen transitorio. Reemplazado por Dirichlet
-> de inflow en $x = 0$ y $y = 0$ (prescribiendo el estado IC vía celdas
-> fantasma) + outflow zero-gradient en las opuestas. Con el fix, `u
-> range` se mantiene en $[1.85, 2.59]$ y la `eta std` temporal cae a la
-> mitad ($0.031 \to 0.015$), señal de que el flujo alcanza el patrón
-> cuasi-estacionario esperado.
-
-> **BathymetryNet fix (2026-05-24).** `BathymetryNet2D` antes hacía
-> `softplus(zb_raw) - 0.1`, permitiendo $z_b \in [-0.1, \infty)$ —
-> valores negativos físicamente imposibles para los cilindros de
-> Ruppenthal ($z_b \in \{0, 0.2, 0.3\}$ m). Cambiado a
-> `softplus(zb_raw)` → rango $[0, \infty)$. El residuo SWE también
-> se reescribió en forma well-balanced ($g \, \partial_x \eta$ con
-> $\eta = h + z_b$ calculado una sola vez) — matemáticamente idéntico
-> al anterior por linealidad de AD, pero más claro y alineado con
-> el solver FV de referencia (Audusse).
+> The ground truth `data/ground_truth_cylinders.npz` is regenerated
+> with the Audusse + Dirichlet-inflow solver. Final cifras land here
+> after the azirafel sweep.
 
 ---
-
-## Summary
-
-Once the barrido runs, this report will collect the inverse PINN results
-for the §5.1 architecture scaling study on this case: three architectures
-(A1, A2, A3) at three parameter budgets (small ≈ 20K, medium ≈ 100K,
-large ≈ 500K) with three seeds. For each cell of the grid we will report
-$z_b$ RMSE, NRMSE, $R^2$, wall-time and peak VRAM, with mean ± std and
-bootstrap CIs aggregated by `studies/aggregate.py`.
 
 ## Setup
 
-| Parameter | Value |
-|---|---|
-| Domain | $[0, 25]^2$ m² |
-| Grid | $50 \times 50$ cell centers ($\Delta x = \Delta y = 0.5$ m) |
-| Cylinder 1 | center $(8, 8)$ m, radius $4$ m, height $0.2$ m |
-| Cylinder 2 | center $(15, 15)$ m, radius $2$ m, height $0.3$ m |
-| Bathymetry shape | vertical-walled indicators (no smoothing) |
-| Initial free surface | $\eta(x, y, 0) = h + z_b = 2$ m uniform |
-| Initial velocity | $\mathbf{v}(x, y, 0) = (2.21, 2.21)$ m/s uniform |
-| Simulation time | $T = 60$ s, $\Delta t = 10^{-2}$ s |
+- Domain: $[0, 25]^2$ m, $t \in [0, 60]$ s.
+- Two cylinders along the diagonal: $(x_c, y_c, r, H) = (8, 8, 4, 0.2)$
+  and $(15, 15, 2, 0.3)$. Sharp indicators.
+- Uniform IC: $\eta = h + z_b = 2$ m, $(u, v) = (2.21, 2.21)$ m/s.
+- Linear drag-free FV-HLL reference solver with Audusse HR; Dirichlet
+  inflow on $x = 0$, $y = 0$; outflow (zero-gradient) on $x = L_x$,
+  $y = L_y$.
+- Inverse PINN: `pinn_bath` A1/small (or larger), 2D transient SWE
+  residual, IC loss (uniform IC is known), eta+u+v observations.
 
-These parameters are pinned to `Report/sections/07-apendice-casos-sinteticos.tex` (A.3).
-
-## Ground truth
-
-Reference solution from a FV-HLL solver on the $50 \times 50$ cartesian
-grid (LeVeque 2002 formulation, implemented in `ground_truth.py`).
-Regenerate with:
+## Reproducible study
 
 ```bash
-cd Experiments/03-two-cylinders-2d
-python generate_and_plot.py
+python -m studies.arch_scaling --study-dir runs/arch_scaling
 ```
 
-This writes `data/ground_truth_cylinders.npz` in the unified
-`pinn_bath.data.Case` schema, along with `figures/bathymetry.png` and
-`figures/ground_truth_snapshots.png`.
-
-## PINN pipeline
-
-Inversion is performed by the canonical harness, not by a per-experiment
-script. Each (arch, budget, seed) configuration is materialized as a
-`RunConfig` via `studies/arch_scaling.py:build_grid()` and trained by
-`pinn_bath.trainers.AdamLBFGSTrainer` (12 000 Adam epochs + 600 L-BFGS
-steps; protocol §3.10).
-
-Launch (on azirafel):
-
-```bash
-python -m studies.arch_scaling --study-dir runs/arch_scaling --device cuda
-```
-
-The runner writes one summary per config under
-`runs/arch_scaling/<run_id>/summary.json` and an append-only manifest at
-`runs/arch_scaling/manifest.jsonl`. Re-launching skips completed configs
-(idempotency) and resumes interrupted ones from the last checkpoint.
+Exp 3 is one of the cases swept by the §5.1 architecture-scaling
+study (A1×A2×A3 × small×medium×large × 3 seeds).
 
 ## Results
 
-> **Pendiente.** Las cifras de RMSE/NRMSE/$R^2$ y la tabla de comparación
-> A1 vs A2 vs A3 por presupuesto se llenarán desde
-> `runs/arch_scaling/<run_id>/summary.json` con `studies/aggregate.py` una
-> vez ejecutado el barrido en azirafel.
+**TODO**. Filled from `runs/arch_scaling`. Expected:
+
+- Cylinder localisation visual check (both cylinders correctly placed?).
+- Per-cylinder height recovery (historical legacy underestimated by
+  ~40%; check if Audusse + new BC + softplus fix change that).
+- RMSE_zb across arch × budget cells (§5.1 part).
 
 ## Files
 
-- `experiment3-detail.md` — case specification.
-- `ground_truth.py` — 2D FV-HLL solver.
-- `generate_and_plot.py` — dataset + figure regeneration.
-- `data/ground_truth_cylinders.npz` — unified-schema dataset.
-- `figures/bathymetry.png` — true $z_b$ map.
-- `figures/ground_truth_snapshots.png` — $\eta$ and $|\mathbf{v}|$ snapshots.
+- `ground_truth.py` — FV-HLL with Audusse + Dirichlet inflow.
+- `data/ground_truth_cylinders.npz` — Case (`bc_type="open_uniform"`).
+- `figures/` — historical figures.
+- `results/baseline.log` — legacy log (kept as audit trail).
