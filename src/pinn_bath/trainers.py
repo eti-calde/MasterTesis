@@ -250,11 +250,19 @@ class AdamLBFGSTrainer:
         """Total-variation regularisation on ``z_b`` over the case spatial grid.
 
         Skips the model evaluation when ``w.tv == 0``. Otherwise queries the
-        bathymetry network on the case's structured spatial grid (sorted x,
-        and y in 2D) and applies :func:`pinn_bath.losses.tv_1d` /
-        :func:`pinn_bath.losses.tv_2d`.
+        full model on the case's structured spatial grid (sorted x, and y
+        in 2D) and applies :func:`pinn_bath.losses.tv_1d` /
+        :func:`pinn_bath.losses.tv_2d` to the ``zb`` field only.
 
-        Note: TV needs a *structured* grid (neighbour-based), so we evaluate
+        Transient cases: the unified ``BaseModel.forward(coords)`` API
+        evaluates BOTH the solution net AND the bathymetry net, and
+        ``A1.sol_ff`` iterates over every spatial+temporal axis. For a
+        transient case we therefore must populate ``t`` in the coords
+        even though ``zb`` is time-independent and we discard the
+        ``h``/``u``/``v`` outputs. We use ``t = t_min`` (any fixed value
+        works — bathymetry doesn't depend on it).
+
+        TV needs a *structured* grid (neighbour-based), so we evaluate
         on ``case.coords`` rather than on the random collocation points.
         """
         if self.cfg.loss.tv == 0.0:
@@ -264,14 +272,25 @@ class AdamLBFGSTrainer:
         case = self.case
         x_np = np.asarray(case.coords["x"], dtype=np.float64)
         x_t = torch.as_tensor(x_np, dtype=dtype, device=self.device).reshape(-1, 1)
+
+        def _maybe_add_t(coords: dict[str, torch.Tensor]) -> None:
+            if case.metadata.has_t:
+                t_val = float(case.coords["t"][0])
+                coords["t"] = torch.full_like(next(iter(coords.values())), t_val)
+
         if case.metadata.spatial_dim == 1:
-            zb_pred = self.model({"x": x_t})["zb"]
+            coords: dict[str, torch.Tensor] = {"x": x_t}
+            _maybe_add_t(coords)
+            zb_pred = self.model(coords)["zb"]
             return tv_1d(zb_pred, x_t)
+
         y_np = np.asarray(case.coords["y"], dtype=np.float64)
         Xg, Yg = np.meshgrid(x_np, y_np)  # (Ny, Nx)
         xy_x = torch.as_tensor(Xg.reshape(-1), dtype=dtype, device=self.device).reshape(-1, 1)
         xy_y = torch.as_tensor(Yg.reshape(-1), dtype=dtype, device=self.device).reshape(-1, 1)
-        zb_pred = self.model({"x": xy_x, "y": xy_y})["zb"].reshape(Yg.shape)
+        coords_2d: dict[str, torch.Tensor] = {"x": xy_x, "y": xy_y}
+        _maybe_add_t(coords_2d)
+        zb_pred = self.model(coords_2d)["zb"].reshape(Yg.shape)
         return tv_2d(
             zb_pred, x_t.reshape(-1), torch.as_tensor(y_np, dtype=dtype, device=self.device)
         )

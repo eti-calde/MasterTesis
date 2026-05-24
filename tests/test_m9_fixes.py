@@ -10,7 +10,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from pinn_bath.config import DataCfg, OptimizerCfg, RunConfig
+from pinn_bath.config import DataCfg, LossWeights, OptimizerCfg, RunConfig
 from pinn_bath.data import Case, CaseMetadata
 from pinn_bath.diagnostics import gradient_norm_per_term
 from pinn_bath.metrics import evaluate_zb
@@ -81,6 +81,83 @@ def test_evaluate_zb_chunked_matches_single_pass() -> None:
     full = evaluate_zb(model, case, chunk_size=None)
     chunked = evaluate_zb(model, case, chunk_size=3)
     assert full == chunked
+
+
+# --- Regression: _compute_tv_loss must pass `t` for transient cases -------
+
+
+@pytest.mark.fast
+def test_compute_tv_loss_works_on_transient_1d() -> None:
+    """Caught in the local overnight sweep (M9 first launch): the M9-PR2
+    TV-loss helper only populated ``x`` (and ``y`` in 2D) in the model
+    coords dict. For transient cases the unified ``BaseModel.forward``
+    iterates over all axes including ``t`` and raised ``KeyError: 't'``.
+
+    Fix: ``_compute_tv_loss`` now adds ``t = t_min`` to the coords for
+    transient cases (zb is time-independent, so the value doesn't matter).
+    """
+    from pinn_bath.models import build
+    from pinn_bath.trainers import AdamLBFGSTrainer
+
+    x = np.linspace(0.0, 1.0, 7)
+    t = np.linspace(0.0, 1.0, 4)
+    Nt, Nx = t.size, x.size
+    case = Case(
+        metadata=CaseMetadata(
+            case_id="m9_regression_tv_transient",
+            spatial_dim=1,
+            has_t=True,
+            bc_type="closed",
+            constants={"g": 9.81},
+            domain={"x": [0.0, 1.0], "t": [0.0, 1.0]},
+            gt_source="synthetic",
+        ),
+        coords={"x": x, "t": t},
+        fields={
+            "h": np.ones((Nt, Nx)),
+            "u": np.zeros((Nt, Nx)),
+            "zb": np.zeros(Nx),
+            "eta": np.ones((Nt, Nx)),
+        },
+    )
+    cfg = RunConfig(
+        case="exp_test",
+        arch="A1",
+        budget="small",
+        form="primitive",
+        seed=0,
+        # tv > 0 triggers the previously-buggy code path.
+        loss=LossWeights(data=10.0, pde=1.0, pos=10.0, tv=1.0e-4),
+        optimizer=OptimizerCfg(adam_epochs=1, lbfgs_steps=0),
+        data=DataCfg(case_path="/dummy.npz", observations=["eta"]),
+    )
+    model = build(
+        "A1",
+        "small",
+        spatial_dim=1,
+        has_t=True,
+        output_fields=("h", "u", "zb"),
+        ff_seed=0,
+    ).double()
+    # Inject dummy obs to bypass random sampler.
+    obs_coords = {
+        "x": torch.zeros(2, 1, dtype=torch.float64),
+        "t": torch.zeros(2, 1, dtype=torch.float64),
+    }
+    obs_values = {"eta": torch.zeros(2, 1, dtype=torch.float64)}
+    trainer = AdamLBFGSTrainer(
+        model,
+        case,
+        cfg,
+        n_collocation=20,
+        n_bc=5,
+        obs_coords=obs_coords,
+        obs_values=obs_values,
+    )
+    # The pre-fix KeyError happened inside compute_loss → _compute_tv_loss.
+    _, losses = trainer.compute_loss()
+    assert losses["tv"] >= 0.0
+    assert np.isfinite(losses["tv"])
 
 
 # --- PR3: RunRecorder fallback summary ------------------------------------
