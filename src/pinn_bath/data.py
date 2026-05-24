@@ -316,6 +316,30 @@ class Case:
                     f"domain has axis {axis!r} that the case does not declare; axes={axes}"
                 )
 
+        # Field shape consistency: prevent silent zb-broadcast bugs at
+        # the boundary between data.py and losses/ic.py. ``h``, ``u``
+        # (and ``v`` in 2D) must share the natural full-grid shape
+        # ``(Nt?, Ny?, Nx)`` derived from the coords. ``zb`` is time-
+        # independent in the schema — its shape must match the *spatial*
+        # part of that grid.
+        spatial_shape: tuple[int, ...] = (
+            (self.coords["x"].size,)
+            if self.metadata.spatial_dim == 1
+            else (self.coords["y"].size, self.coords["x"].size)
+        )
+        full_shape: tuple[int, ...] = (
+            (self.coords["t"].size, *spatial_shape) if self.metadata.has_t else spatial_shape
+        )
+        for f in required_fields:
+            arr = self.fields[f]
+            expected = spatial_shape if f == "zb" else full_shape
+            if arr.shape != expected:
+                raise ValueError(
+                    f"{self.metadata.case_id}: field {f!r} has shape {arr.shape}, "
+                    f"expected {expected}. Check axis ordering "
+                    f"(time first, then y, then x)."
+                )
+
 
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()

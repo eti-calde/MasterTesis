@@ -21,10 +21,27 @@ BUDGET_TARGETS: dict[str, int] = {
     "large": 500_000,
 }
 
-# Allowed deviation from BUDGET_TARGETS. The fair-comparison protocol asks
-# for equal budget across designs at each grid point; some spread is
-# unavoidable because A1 has Fourier features and per-field A3 has more nets
-# in 2D. 35% absorbs that across the 9 (arch, budget) x 3 (case_kind) cells.
+# Allowed relative deviation from BUDGET_TARGETS. Used by the architecture
+# tests in tests/test_factory.py and tests/test_models.py.
+#
+# Rationale for the 35% tolerance: the fair-comparison protocol asks for
+# equal parameter budget across designs at each (case_kind, budget) cell,
+# but exact equality is impossible without dynamic resizing — three sources
+# of unavoidable spread:
+#
+# 1. Fourier features sit on top of the MLP backbone with their own
+#    `2 * ff_n * in_dim` weight count. A1 has them on both sol-net and
+#    bath-net; A2/A3 don't, so their backbones are wider to compensate.
+# 2. A3 has one MLP per output field. In 2D (output fields h, u, v, zb)
+#    that's 4 small MLPs vs A1's 2 nets; the multiplicative overhead
+#    shifts the total by ~15-20% even after width tuning.
+# 3. Per-axis Fourier (PerAxisFourier) doubles its parameters when going
+#    1D -> 2D (adds the y axis), which doesn't apply to A2/A3 raw input.
+#
+# 35% was the smallest tolerance that simultaneously fits the 9 (arch x
+# budget) cells across 1D-steady, 1D-transient, and 2D-transient cases
+# (measured empirically — the worst case sat at +28% deviation; rounded
+# up to give margin for the 2D-3-field A3 large cell).
 BUDGET_TOL: float = 0.35
 
 

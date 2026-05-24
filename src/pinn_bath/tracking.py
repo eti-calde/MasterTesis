@@ -91,6 +91,11 @@ class RunRecorder:
     def close(self) -> None:
         if not self._fh.closed:
             self._fh.close()
+        # Fallback: if the caller forgot to write_summary, stub one with
+        # status="incomplete" so aggregate.collect doesn't silently drop
+        # the run. Detect by absence of the file on disk.
+        if not self._summary_path.exists():
+            self.write_summary(status="incomplete")
 
     def __enter__(self) -> RunRecorder:
         return self

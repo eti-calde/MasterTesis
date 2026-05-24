@@ -98,23 +98,34 @@ def test_case_2d_steady_raises() -> None:
 
 
 @pytest.mark.fast
-def test_ic_loss_raises_on_shape_mismatch() -> None:
+def test_case_validate_catches_transposed_h_field() -> None:
+    """After M9.5 the field-shape check at Case._validate catches the
+    transpose at construction — the IC loss assert (Fix 7) is now a
+    defense-in-depth backstop."""
     case = _case_1d_transient_with_v_friendly()
-    # Corrupt: replace h with a (Nx, Nt) transposed array — same number
-    # of elements but slicing [0] gives a row of length Nt = 5, not Nx = 11.
-    bad_case = Case(
-        metadata=case.metadata,
-        coords=case.coords,
-        fields={
-            "h": case.fields["h"].T,  # (Nx, Nt) instead of (Nt, Nx)
-            "u": case.fields["u"],
-            "zb": case.fields["zb"],
-            "eta": case.fields["eta"],
-        },
-    )
+    with pytest.raises(ValueError, match="expected"):
+        Case(
+            metadata=case.metadata,
+            coords=case.coords,
+            fields={
+                "h": case.fields["h"].T,  # (Nx, Nt) instead of (Nt, Nx)
+                "u": case.fields["u"],
+                "zb": case.fields["zb"],
+                "eta": case.fields["eta"],
+            },
+        )
+
+
+@pytest.mark.fast
+def test_ic_loss_raises_on_shape_mismatch_bypassing_validate() -> None:
+    """The IC-loss shape assert (Fix 7) is still load-bearing: if a
+    caller bypasses Case._validate (e.g., mutates fields in place after
+    construction), the IC evaluator still catches the bad shape."""
+    case = _case_1d_transient_with_v_friendly()
+    case.fields["h"] = case.fields["h"].T  # post-construction mutation
     model = _ConstModel(h=1.0, u=0.5, zb=0.0)
     with pytest.raises(ValueError, match="t=0 slice has size"):
-        initial_condition_loss(model, bad_case, fields=("h",))
+        initial_condition_loss(model, case, fields=("h",))
 
 
 # --- Fix 5: 2D friction uses speed magnitude -------------------------------

@@ -41,19 +41,41 @@ def r_squared(pred: torch.Tensor, true: torch.Tensor) -> float:
     return 1.0 - ss_res / ss_tot
 
 
-def evaluate_zb(model: BaseModel, case: Case) -> dict[str, float]:
-    """Compute the RMSE / NRMSE / R² of ``zb`` on the full eval grid."""
+def evaluate_zb(
+    model: BaseModel,
+    case: Case,
+    *,
+    chunk_size: int = 200_000,
+) -> dict[str, float]:
+    """Compute the RMSE / NRMSE / R² of ``zb`` on the full eval grid.
+
+    For large grids (e.g. Exp 4/5 2D transient where ``Nt * Ny * Nx`` can
+    exceed 10⁶), the full forward is split into chunks of ``chunk_size``
+    rows to bound peak VRAM. With ``chunk_size = 200000`` the largest 2D
+    eval grid stays under ~1 GB activation footprint on an A1/large
+    model. Set ``chunk_size = None`` to disable chunking (legacy single
+    forward).
+    """
     coords_eval, fields_eval = case.eval_grid()
     device = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
     coords_on_device = {
         axis: t.to(device=device, dtype=dtype).detach() for axis, t in coords_eval.items()
     }
+    n_rows = next(iter(coords_on_device.values())).shape[0]
     with torch.no_grad():
-        out = model(coords_on_device)
-    zb_pred = out["zb"].cpu()
+        if chunk_size is None or n_rows <= chunk_size:
+            out = model(coords_on_device)
+            zb_pred = out["zb"]
+        else:
+            chunks: list[torch.Tensor] = []
+            for start in range(0, n_rows, chunk_size):
+                stop = min(start + chunk_size, n_rows)
+                slice_coords = {axis: t[start:stop] for axis, t in coords_on_device.items()}
+                chunks.append(model(slice_coords)["zb"])
+            zb_pred = torch.cat(chunks, dim=0)
+    zb_pred = zb_pred.cpu()
     zb_true = fields_eval["zb"].cpu()
-    # Broadcast time-axis if zb_pred is (Nt*Ny*Nx,1) and zb_true is the same.
     if zb_pred.shape != zb_true.shape:
         zb_pred = zb_pred.reshape(zb_true.shape)
     return {

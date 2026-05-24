@@ -61,6 +61,17 @@ from pinn_bath.models.base import BaseModel
 from pinn_bath.seed import set_rng_state
 from pinn_bath.tracking import RunRecorder
 
+# Four independent RNG streams need to be decorrelated from `cfg.seed`
+# while staying deterministic. The offsets are odd primes so the streams
+# don't share factors. Bumping any of these is a behavioural change —
+# the corresponding sampler will draw a different point set even at the
+# same cfg.seed, so existing reproduced-runs may shift.
+_SEED_OFFSETS: dict[str, int] = {
+    "collocation": 7919,
+    "bc": 13_337,
+    "ic": 31_337,
+}
+
 
 class AdamLBFGSTrainer:
     """Two-phase Adam + L-BFGS trainer for inverse SWE PINN."""
@@ -111,7 +122,7 @@ class AdamLBFGSTrainer:
             self.obs_values = {f: obs[f].to(self.device) for f in cfg.data.observations}
 
         coll = case.sample_collocation(
-            seed=cfg.seed + 7919,
+            seed=cfg.seed + _SEED_OFFSETS["collocation"],
             n_coll=n_collocation,
             requires_grad=True,
         )
@@ -320,7 +331,7 @@ class AdamLBFGSTrainer:
             self.model,
             self.case,
             n_pts=None,  # use full spatial grid; cheap for typical N
-            seed=self.cfg.seed + 31_337,
+            seed=self.cfg.seed + _SEED_OFFSETS["ic"],
             device=self.device,
             dtype=dtype,
         )
@@ -351,7 +362,7 @@ class AdamLBFGSTrainer:
         if self.cfg.loss.bc == 0.0:
             return torch.zeros((), dtype=dtype, device=self.device)
         bc_type = self.case.metadata.bc_type
-        seed = self.cfg.seed + 13_337
+        seed = self.cfg.seed + _SEED_OFFSETS["bc"]
         if bc_type == "periodic":
             return periodic_bc_loss(
                 self.model,
