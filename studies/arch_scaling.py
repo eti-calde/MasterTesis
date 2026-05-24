@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pinn_bath.config import CheckpointCfg, DataCfg, OptimizerCfg, RunConfig
+from pinn_bath.config import CheckpointCfg, DataCfg, LossWeights, OptimizerCfg, RunConfig
 from pinn_bath.registry import Registry
 from studies._runner import run_one
 
@@ -32,6 +32,26 @@ CASE_PATHS: dict[str, str] = {
 ARCHS: tuple[str, ...] = ("A1", "A2", "A3")
 BUDGETS: tuple[str, ...] = ("small", "medium", "large")
 SEEDS: tuple[int, ...] = (0, 1, 2)
+
+
+def _case_loss_weights(case: str) -> LossWeights:
+    """Per-case ``LossWeights`` that activate the relevant M1 BC/IC terms.
+
+    - Exp 1: bc=100 fires both `flat_bed_loss` (z_b=0 outside bump) and
+      `inflow_outflow_1d_loss` (h=h_down outlet + q=h·u boundaries).
+    - Exp 2: ic=100 (basin starts at known state); bc=10 (closed-walls
+      u=0); wet/dry mask if the case carries `eps_wet` constant.
+    - Exp 3: ic=100 (uniform IC). BC is handled implicitly by the
+      uniform inflow observations + FV Dirichlet ground truth.
+    """
+    if case == "exp1":
+        return LossWeights(data=10.0, pde=1.0, pos=10.0, bc=100.0, tikh=1.0e-5)
+    if case == "exp2":
+        return LossWeights(data=10.0, pde=1.0, pos=10.0, ic=100.0, bc=10.0, tv=1.0e-4)
+    if case == "exp3":
+        return LossWeights(data=10.0, data_u=5.0, pde=1.0, pos=10.0, ic=100.0, tv=1.0e-5)
+    # Default: just data + pde + pos.
+    return LossWeights(data=10.0, pde=1.0, pos=10.0)
 
 
 def build_grid(
@@ -57,6 +77,7 @@ def build_grid(
                             arch=arch,  # type: ignore[arg-type]
                             budget=budget,  # type: ignore[arg-type]
                             seed=seed,
+                            loss=_case_loss_weights(case),
                             optimizer=OptimizerCfg(
                                 adam_epochs=adam_epochs,
                                 lbfgs_steps=lbfgs_steps,

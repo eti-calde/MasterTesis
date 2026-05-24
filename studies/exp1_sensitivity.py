@@ -24,7 +24,7 @@ from pathlib import Path
 from pinn_bath.config import CheckpointCfg, DataCfg, LossWeights, OptimizerCfg, RunConfig
 from pinn_bath.registry import Registry
 from studies._runner import run_one
-from studies.arch_scaling import CASE_PATHS
+from studies.arch_scaling import CASE_PATHS, _case_loss_weights  # noqa: F401
 
 # A1 small: same architecture used to generate the legacy 5.80 mm baseline.
 ARCH = "A1"
