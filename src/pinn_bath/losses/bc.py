@@ -178,3 +178,128 @@ def flat_bed_loss(
     out = model({"x": x_flat})
     zb = out["zb"]
     return (zb**2).mean()
+
+
+def wall_bc_loss(
+    model: BaseModel,
+    case: Case,
+    *,
+    n_bc: int = 200,
+    seed: int = 0,
+    device: torch.device | str = "cpu",
+    dtype: torch.dtype = torch.float64,
+    axes: Iterable[str] | None = None,
+) -> torch.Tensor:
+    r"""Penalize :math:`u = 0` (and :math:`v = 0` in 2D) at closed walls.
+
+    For each requested spatial axis, samples ``n_bc`` random points along
+    each of its two boundaries (low and high) — the other spatial axis
+    and ``t`` (if transient) are sampled uniformly inside their domain.
+    The flow velocity components are evaluated and penalised toward zero.
+
+    By default ``axes = (\"x\", )`` for 1D and ``(\"x\", \"y\")`` for 2D,
+    i.e. all spatial axes have closed walls (Thacker basin). Pass a
+    subset to model partially-closed domains.
+    """
+    device_t = torch.device(device)
+    spatial_dim = case.metadata.spatial_dim
+    if axes is None:
+        axes = ("x",) if spatial_dim == 1 else ("x", "y")
+    spatial: list[str] = ["x"] if spatial_dim == 1 else ["x", "y"]
+    has_t = case.metadata.has_t
+
+    rng = np.random.default_rng(seed)
+    total = torch.zeros((), dtype=dtype, device=device_t)
+    fields_check = ("u", "v")
+
+    for axis in axes:
+        if axis not in case.metadata.domain:
+            raise KeyError(
+                f"wall_bc_loss: axis {axis!r} not in case domain {sorted(case.metadata.domain)}"
+            )
+        lo, hi = case.metadata.domain[axis]
+        for boundary_val in (float(lo), float(hi)):
+            coords: dict[str, torch.Tensor] = {}
+            coords[axis] = torch.full((n_bc, 1), boundary_val, dtype=dtype, device=device_t)
+            for other in spatial:
+                if other == axis:
+                    continue
+                o_lo, o_hi = case.metadata.domain[other]
+                samp = torch.as_tensor(
+                    rng.uniform(o_lo, o_hi, size=n_bc), dtype=dtype, device=device_t
+                ).reshape(-1, 1)
+                coords[other] = samp
+            if has_t:
+                t_lo, t_hi = case.metadata.domain["t"]
+                t_samp = torch.as_tensor(
+                    rng.uniform(t_lo, t_hi, size=n_bc), dtype=dtype, device=device_t
+                ).reshape(-1, 1)
+                coords["t"] = t_samp
+            out = model(coords)
+            for f in fields_check:
+                if f in out:
+                    total = total + (out[f] ** 2).mean()
+    return total
+
+
+def inflow_outflow_1d_loss(
+    model: BaseModel,
+    case: Case,
+    *,
+    device: torch.device | str = "cpu",
+    dtype: torch.dtype = torch.float64,
+    h_downstream_key: str = "h_down",
+    q_key: str = "q",
+) -> torch.Tensor:
+    r"""Combined Exp 1-style BCs for an open 1D channel.
+
+    For a steady 1D case with inflow at ``x_min`` and outflow at
+    ``x_max``, enforces three boundary penalties:
+
+    1. ``z_b(x_min) = z_b(x_max) = 0`` (flat bed at the endpoints).
+    2. ``h(x_max) = h_downstream`` (known outlet depth, Dirichlet).
+    3. ``h*u = q`` at both endpoints (discharge consistency).
+
+    Constants ``h_downstream`` and ``q`` are read from
+    ``case.metadata.constants`` under ``h_downstream_key`` (default
+    ``"h_down"``) and ``q_key`` (default ``"q"``).
+    """
+    if case.metadata.spatial_dim != 1:
+        raise NotImplementedError(
+            f"inflow_outflow_1d_loss only supports 1D cases; "
+            f"got spatial_dim={case.metadata.spatial_dim}"
+        )
+    consts = case.metadata.constants
+    if h_downstream_key not in consts or q_key not in consts:
+        raise KeyError(
+            f"inflow_outflow_1d_loss requires {h_downstream_key!r} and "
+            f"{q_key!r} in case.metadata.constants; available: {sorted(consts)}"
+        )
+    h_down = float(consts[h_downstream_key])
+    q_known = float(consts[q_key])
+
+    device_t = torch.device(device)
+    x_min, x_max = case.metadata.domain["x"]
+    coords_lo: dict[str, torch.Tensor] = {
+        "x": torch.full((1, 1), float(x_min), dtype=dtype, device=device_t),
+    }
+    coords_hi: dict[str, torch.Tensor] = {
+        "x": torch.full((1, 1), float(x_max), dtype=dtype, device=device_t),
+    }
+    out_lo = model(coords_lo)
+    out_hi = model(coords_hi)
+
+    zb_lo = out_lo["zb"]
+    zb_hi = out_hi["zb"]
+    h_hi = out_hi["h"]
+    h_lo = out_lo["h"]
+    u_hi = out_hi["u"]
+    u_lo = out_lo["u"]
+
+    # 1. zb = 0 at both endpoints
+    bc_zb = (zb_lo**2).mean() + (zb_hi**2).mean()
+    # 2. h(x_max) = h_downstream
+    bc_h = ((h_hi - h_down) ** 2).mean()
+    # 3. q = h*u at both endpoints
+    bc_q = ((h_lo * u_lo - q_known) ** 2).mean() + ((h_hi * u_hi - q_known) ** 2).mean()
+    return bc_zb + bc_h + bc_q

@@ -45,11 +45,14 @@ from pinn_bath.diagnostics import (
 from pinn_bath.losses import (
     data_mse,
     flat_bed_loss,
+    inflow_outflow_1d_loss,
+    initial_condition_loss,
     pde_mse,
     periodic_bc_loss,
     positivity,
     swe_residual,
     tikhonov,
+    wall_bc_loss,
 )
 from pinn_bath.metrics import baseline_rmse_zb, evaluate_zb
 from pinn_bath.models.base import BaseModel
@@ -126,12 +129,15 @@ class AdamLBFGSTrainer:
         """
         out_coll = self.model(self.coll_coords)
         check_sanity_bounds(out_coll)
+        friction, friction_params = self._friction_from_case()
         residuals = swe_residual(
             self.cfg.form,
             self.coll_coords,
             out_coll,
             spatial_dim=self.case.metadata.spatial_dim,
             has_t=self.case.metadata.has_t,
+            friction=friction,
+            friction_params=friction_params,
         )
 
         out_obs = self.model(self.obs_coords)
@@ -142,10 +148,22 @@ class AdamLBFGSTrainer:
         zero = torch.zeros((), dtype=dtype, device=self.device)
         L_data = data_mse(eta_pred, self.obs_values["eta"]) if "eta" in self.obs_values else zero
         L_data_u = data_mse(out_obs["u"], self.obs_values["u"]) if "u" in self.obs_values else zero
+        # Optional wet-mask: when ``eps_wet > 0`` in the case constants,
+        # weight each squared residual by a smooth wet indicator
+        # ``sigmoid((h - eps_wet)/scale)``, so dry cells (where ``h``
+        # cannot reach 0 because of the softplus output) don't inject
+        # fictitious PDE residual into the loss. Disabled by default
+        # (eps_wet=0 → wet=1 everywhere → identical to old behavior).
+        eps_wet = float(self.case.metadata.constants.get("eps_wet", 0.0))
+        if eps_wet > 0.0:
+            wet_scale = float(self.case.metadata.constants.get("wet_scale", eps_wet))
+            wet = torch.sigmoid((out_coll["h"].detach() - eps_wet) / wet_scale)
+            residuals = {k: v * wet for k, v in residuals.items()}
         L_pde = pde_mse(residuals)
         L_pos = positivity(out_coll["h"])
         L_tikh = tikhonov(out_coll["zb"])
         L_bc = self._compute_bc_loss(dtype)
+        L_ic = self._compute_ic_loss(dtype)
 
         total = (
             w.data * L_data
@@ -154,6 +172,7 @@ class AdamLBFGSTrainer:
             + w.pos * L_pos
             + w.tikh * L_tikh
             + w.bc * L_bc
+            + w.ic * L_ic
         )
 
         losses = {
@@ -163,38 +182,93 @@ class AdamLBFGSTrainer:
             "pos": float(L_pos.item()),
             "tikh": float(L_tikh.item()),
             "bc": float(L_bc.item()),
+            "ic": float(L_ic.item()),
             "total": float(total.item()),
         }
         return total, losses
 
+    def _friction_from_case(self) -> tuple[str, dict[str, float]]:
+        """Pick friction model + params from ``case.metadata.constants``.
+
+        - ``"n_manning"`` present and > 0 → Manning-Strickler.
+        - ``"kappa"`` present → linear drag (Angel et al. 2024).
+        - else → no friction.
+        """
+        c = self.case.metadata.constants
+        n = float(c.get("n_manning", 0.0))
+        if n > 0.0:
+            return "manning", {"n_manning": n}
+        if "kappa" in c:
+            return "linear_kappa", {
+                "kappa": float(c["kappa"]),
+                "eps_dry": float(c.get("eps_dry", 1.0e-4)),
+            }
+        return "none", {}
+
+    def _compute_ic_loss(self, dtype: torch.dtype) -> torch.Tensor:
+        """Mean squared error against the t=0 slice of the case fields.
+
+        Only fired for transient cases when ``w.ic > 0``. Otherwise returns
+        a zero scalar (and skips the model evaluation).
+        """
+        if not self.case.metadata.has_t or self.cfg.loss.ic == 0.0:
+            return torch.zeros((), dtype=dtype, device=self.device)
+        return initial_condition_loss(
+            self.model,
+            self.case,
+            n_pts=None,  # use full spatial grid; cheap for typical N
+            seed=self.cfg.seed + 31_337,
+            device=self.device,
+            dtype=dtype,
+        )
+
     def _compute_bc_loss(self, dtype: torch.dtype) -> torch.Tensor:
         """Dispatch a BC penalty for the case's ``bc_type``.
 
-        Currently implemented:
+        Implemented:
 
         - ``periodic`` (Tian dT10) → :func:`pinn_bath.losses.periodic_bc_loss`.
-        - ``open_dirichlet`` (Exp 1 bump) → :func:`pinn_bath.losses.flat_bed_loss`
-          enforces ``z_b = 0`` outside the bump support
-          ``|x - x_0| > w``.
+        - ``open_dirichlet`` (Exp 1 bump): always includes
+          :func:`pinn_bath.losses.flat_bed_loss` (``z_b = 0`` outside the
+          bump support). If ``h_down`` and ``q`` are in ``constants``, also
+          adds :func:`pinn_bath.losses.inflow_outflow_1d_loss`.
+        - ``closed_walls`` (Thacker basin Exps 2 / 5):
+          :func:`pinn_bath.losses.wall_bc_loss`.
 
         Other types return 0 (the data and PDE terms handle them implicitly).
         """
         bc_type = self.case.metadata.bc_type
+        seed = self.cfg.seed + 13_337
         if bc_type == "periodic":
             return periodic_bc_loss(
                 self.model,
                 self.case,
                 n_bc=self.n_bc,
-                seed=self.cfg.seed + 13_337,
+                seed=seed,
                 device=self.device,
                 dtype=dtype,
             )
         if bc_type == "open_dirichlet":
-            return flat_bed_loss(
+            loss = flat_bed_loss(
                 self.model,
                 self.case,
                 n_pts=self.n_bc,
-                seed=self.cfg.seed + 13_337,
+                seed=seed,
+                device=self.device,
+                dtype=dtype,
+            )
+            c = self.case.metadata.constants
+            if "h_down" in c and "q" in c:
+                loss = loss + inflow_outflow_1d_loss(
+                    self.model, self.case, device=self.device, dtype=dtype
+                )
+            return loss
+        if bc_type == "closed_walls":
+            return wall_bc_loss(
+                self.model,
+                self.case,
+                n_bc=self.n_bc,
+                seed=seed,
                 device=self.device,
                 dtype=dtype,
             )
