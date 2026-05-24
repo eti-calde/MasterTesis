@@ -25,9 +25,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 mkdir -p runs
 
+# Use the repo venv's python explicitly so the script works under
+# nohup / cron / fresh shells where the venv may not be activated.
+PY="${PY:-$ROOT/.venv/bin/python}"
+if [[ ! -x "$PY" ]]; then
+  echo "venv python not found at $PY. Run 'uv venv && uv pip install -e .[dev]' first." >&2
+  exit 1
+fi
+
 # Sanity: CUDA must be available unless DEV=cpu was passed explicitly.
 if [[ "$DEV" == "cuda" ]]; then
-  python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available; set DEV=cpu'" \
+  "$PY" -c "import torch; assert torch.cuda.is_available(), 'CUDA not available; set DEV=cpu'" \
     || { echo "CUDA check failed. Aborting."; exit 1; }
 fi
 
@@ -53,20 +61,20 @@ run() {
 }
 
 # Fast (~45 min)
-run ablation_forms python -m studies.ablation_forms \
+run ablation_forms "$PY" -m studies.ablation_forms \
   --device "$DEV" --study-dir runs/ablation_forms
 
 # Fast (~1.25 h)
-run exp6_run_matrix python -m studies.exp6_run_matrix \
+run exp6_run_matrix "$PY" -m studies.exp6_run_matrix \
   --device "$DEV" --study-dir runs/exp6
 
 # Medium (~2.5 h)
-run exp1_sensitivity python -m studies.exp1_sensitivity \
+run exp1_sensitivity "$PY" -m studies.exp1_sensitivity \
   --device "$DEV" --study-dir runs/exp1_sensitivity
 
 # Heaviest local sweep (~5-7 h). arch_scaling restricted to 1D cases
 # so it fits in the GTX 1650 budget; exp3 + exp5 (2D) go to azirafel.
-run arch_scaling_1d python -m studies.arch_scaling \
+run arch_scaling_1d "$PY" -m studies.arch_scaling \
   --device "$DEV" --study-dir runs/arch_scaling --cases exp1,exp2
 
 echo ""
