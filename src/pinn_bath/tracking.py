@@ -81,6 +81,7 @@ class RunRecorder:
             summary["case"] = self.cfg.case
             summary["arch"] = self.cfg.arch
             summary["budget"] = self.cfg.budget
+            summary["form"] = self.cfg.form
             summary["seed"] = self.cfg.seed
         _atomic_write_json(self._summary_path, summary, indent=2, sort_keys=True)
 

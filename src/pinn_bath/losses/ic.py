@@ -84,6 +84,7 @@ def initial_condition_loss(
 
     out = model(coords)
 
+    expected_size = N
     total = torch.zeros((), dtype=dtype, device=device_t)
     for f in fields_check:
         if f not in case.fields or f not in out:
@@ -94,7 +95,18 @@ def initial_condition_loss(
             gt_slice = gt
         else:
             gt_slice = gt[0]  # t=0 slice
-        gt_flat = np.asarray(gt_slice).reshape(-1)[idx]
+        gt_arr = np.asarray(gt_slice)
+        # Guard against transposed / mis-shaped GT fields that would
+        # silently garble the IC penalty after .reshape(-1)[idx].
+        if gt_arr.size != expected_size:
+            raise ValueError(
+                f"initial_condition_loss: case {case.metadata.case_id!r} field "
+                f"{f!r} t=0 slice has size {gt_arr.size}, expected {expected_size} "
+                f"(spatial grid: Nx={x.size}"
+                + (f", Ny={case.coords['y'].size}" if spatial_dim == 2 else "")
+                + "). Check field axis ordering (time first, then y, then x)."
+            )
+        gt_flat = gt_arr.reshape(-1)[idx]
         gt_t = torch.as_tensor(gt_flat, dtype=dtype, device=device_t).reshape(-1, 1)
         total = total + torch.mean((out[f] - gt_t) ** 2)
     return total

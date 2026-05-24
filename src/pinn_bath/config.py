@@ -22,17 +22,24 @@ Observation = Literal["eta", "u", "v"]
 
 
 class LossWeights(BaseModel):
-    """Weights for the composite PINN loss."""
+    """Weights for the composite PINN loss.
+
+    All defaults are 0 or innocuous so that constructing ``LossWeights()``
+    without overrides activates only ``data``, ``pde``, ``pos`` (the
+    irreducible terms). Per-case weights live in
+    ``studies.arch_scaling._case_loss_weights``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     data: float = 10.0
     data_u: float = 0.0
+    data_v: float = 0.0
     pde: float = 1.0
     ic: float = 0.0
     bc: float = 0.0
     pos: float = 1.0
-    tv: float = 1.0e-4
+    tv: float = 0.0
     tikh: float = 0.0
     dry: float = 0.0
 

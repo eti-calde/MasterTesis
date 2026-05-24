@@ -54,9 +54,26 @@ def _case_loss_weights(case: str) -> LossWeights:
     if case == "exp2":
         return LossWeights(data=10.0, pde=1.0, pos=10.0, ic=100.0, bc=10.0, tv=1.0e-4)
     if case == "exp3":
-        return LossWeights(data=10.0, data_u=5.0, pde=1.0, pos=10.0, ic=100.0, tv=1.0e-5)
+        return LossWeights(
+            data=10.0,
+            data_u=5.0,
+            data_v=5.0,
+            pde=1.0,
+            pos=10.0,
+            ic=100.0,
+            tv=1.0e-5,
+        )
     if case == "exp5":
-        return LossWeights(data=10.0, data_u=5.0, pde=1.0, pos=10.0, ic=500.0, bc=10.0, tv=1.0e-5)
+        return LossWeights(
+            data=10.0,
+            data_u=5.0,
+            data_v=5.0,
+            pde=1.0,
+            pos=10.0,
+            ic=500.0,
+            bc=10.0,
+            tv=1.0e-5,
+        )
     if case == "exp6":
         # Angel real-data: no IC (window starts mid-experiment), no BC
         # explicitly (inlet S1 is a soft observation, outlet is open).

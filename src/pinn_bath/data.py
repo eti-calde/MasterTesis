@@ -88,6 +88,12 @@ class Case:
     file_hash: str | None = None
     eval_dtype: torch.dtype = field(default_factory=lambda: torch.float64)
 
+    def __post_init__(self) -> None:
+        # Run schema validation on every construction path (not just load /
+        # save), so bad metadata (e.g., spatial_dim=2 with has_t=False) is
+        # caught early at the call site.
+        self._validate()
+
     # --- IO ---------------------------------------------------------------
 
     @classmethod
@@ -283,6 +289,15 @@ class Case:
         )
 
     def _validate(self) -> None:
+        # 2D-steady has no SWE residual implemented in pinn_bath; catch
+        # it at construction so the trainer never sees the impossible
+        # combination.
+        if self.metadata.spatial_dim == 2 and not self.metadata.has_t:
+            raise ValueError(
+                f"{self.metadata.case_id}: 2D steady cases are not implemented "
+                f"(spatial_dim=2 requires has_t=True). Either add the t axis or "
+                f"reduce to spatial_dim=1."
+            )
         axes = self._axes()
         for a in axes:
             if a not in self.coords:

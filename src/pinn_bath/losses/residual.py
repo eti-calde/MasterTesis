@@ -25,7 +25,7 @@ Friction = Literal["none", "manning", "linear_kappa"]
 def _friction_term_1d(
     u: torch.Tensor, h: torch.Tensor, *, model: Friction, g: float, params: dict[str, float]
 ) -> torch.Tensor:
-    """Source term Sf to add to the primitive momentum residual.
+    """Source term Sf to add to the primitive momentum residual (1D).
 
     - ``"none"``: returns 0.
     - ``"manning"``: ``Sf = g·n²·u·|u|/h^(4/3)``, with ``n = params["n_manning"]``.
@@ -44,6 +44,46 @@ def _friction_term_1d(
         kappa = float(params["kappa"])
         eps = float(params.get("eps_dry", 1.0e-4))
         return kappa * u / (h + eps)
+    raise ValueError(f"unknown friction model: {model!r}")
+
+
+def _friction_term_2d(
+    u: torch.Tensor,
+    v: torch.Tensor,
+    h: torch.Tensor,
+    *,
+    model: Friction,
+    g: float,
+    params: dict[str, float],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-component friction Sf for 2D primitive momentum residuals.
+
+    Returns ``(Sf_u, Sf_v)``.
+
+    - ``"none"``: zeros.
+    - ``"manning"``: ``Sf_u = g·n²·u·|U|/h^(4/3)``, ``Sf_v = g·n²·v·|U|/h^(4/3)``
+      with ``|U| = sqrt(u² + v² + eps_speed²)``. The speed-magnitude
+      coupling is the physically correct 2D Manning-Strickler;
+      applying the 1D ``u·|u|`` / ``v·|v|`` per component (the bug
+      fixed here) under-counts the friction by up to ``sqrt(2)`` when
+      ``u ~ v``.
+    - ``"linear_kappa"``: per-component ``κ·{u, v}/(h + eps)`` (linear
+      drag is intrinsically component-wise; the speed magnitude does not
+      enter, so no 2D correction is needed).
+    """
+    if model == "none":
+        zero = torch.zeros_like(u)
+        return zero, zero
+    if model == "manning":
+        n = float(params["n_manning"])
+        eps_speed = float(params.get("eps_speed", 1.0e-12))
+        speed = torch.sqrt(u * u + v * v + eps_speed * eps_speed)
+        factor = g * (n**2) / h ** (4.0 / 3.0)
+        return factor * u * speed, factor * v * speed
+    if model == "linear_kappa":
+        kappa = float(params["kappa"])
+        eps = float(params.get("eps_dry", 1.0e-4))
+        return kappa * u / (h + eps), kappa * v / (h + eps)
     raise ValueError(f"unknown friction model: {model!r}")
 
 
@@ -210,11 +250,9 @@ def _residual_2d_transient(
 ) -> dict[str, torch.Tensor]:
     x, y, t = coords["x"], coords["y"], coords["t"]
     h, u, v, zb = fields["h"], fields["u"], fields["v"], fields["zb"]
-    # Friction per-component (Manning uses speed magnitude in 2D; for
-    # simplicity we apply the 1D form per-component, which matches each
-    # legacy experiment's convention. Refine if a 2D drag test demands it.)
-    Sf_u = _friction_term_1d(u, h, model=friction, g=g, params=friction_params)
-    Sf_v = _friction_term_1d(v, h, model=friction, g=g, params=friction_params)
+    # 2D friction with speed magnitude |U|=sqrt(u²+v²) — see
+    # _friction_term_2d docstring for the physical rationale.
+    Sf_u, Sf_v = _friction_term_2d(u, v, h, model=friction, g=g, params=friction_params)
 
     if form == "primitive":
         h_x, h_y, h_t = _grad(h, x), _grad(h, y), _grad(h, t)

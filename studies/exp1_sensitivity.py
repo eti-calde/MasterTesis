@@ -42,6 +42,29 @@ OBSTYPES: tuple[tuple[str, ...], ...] = (
 )
 
 
+def _weights_for_obstype(observations: tuple[str, ...]) -> dict[str, float]:
+    """Set ``data`` / ``data_u`` weights to match which fields are observed.
+
+    The legacy bug: ``data_u`` was kept at its default 0 even when the
+    observed field was ``("u",)``, so the ``u``-only sweep cell trained
+    with no observation signal at all (data_u * L_data_u = 0).
+    Conventions used here:
+
+    - ``("eta",)``        → data=10, data_u=0.
+    - ``("u",)``          → data=0,  data_u=10 (u carries the full signal).
+    - ``("eta", "u")``    → data=10, data_u=5  (η dominates, u auxiliary).
+    """
+    has_eta = "eta" in observations
+    has_u = "u" in observations
+    if has_eta and has_u:
+        return {"data": 10.0, "data_u": 5.0}
+    if has_eta:
+        return {"data": 10.0, "data_u": 0.0}
+    if has_u:
+        return {"data": 0.0, "data_u": 10.0}
+    raise ValueError(f"unsupported observation set for Exp 1 sensitivity sweep: {observations!r}")
+
+
 def _base_cfg(
     seed: int,
     n_obs: int,
@@ -50,6 +73,7 @@ def _base_cfg(
     adam_epochs: int,
     lbfgs_steps: int,
 ) -> RunConfig:
+    weights = _weights_for_obstype(observations)
     return RunConfig(
         case="exp1",
         arch=ARCH,
@@ -57,7 +81,8 @@ def _base_cfg(
         form=FORM,
         seed=seed,
         loss=LossWeights(
-            data=10.0,
+            data=weights["data"],
+            data_u=weights["data_u"],
             pde=1.0,
             pos=10.0,
             bc=100.0,

@@ -359,23 +359,30 @@ def test_flat_bed_loss_raises_on_missing_keys() -> None:
 
 @pytest.mark.fast
 def test_flat_bed_loss_rejects_non_1d() -> None:
+    """flat_bed_loss is 1D-only; reject 2D cases. We use a 2D-*transient*
+    case here because Case._validate rejects 2D-steady at construction
+    (post-M7 Fix 6)."""
     from pinn_bath.data import CaseMetadata
 
     case = Case(
         metadata=CaseMetadata(
             case_id="t2d",
             spatial_dim=2,
-            has_t=False,
+            has_t=True,
             bc_type="open_dirichlet",
             constants={"x_0": 0.0, "w": 1.0},
-            domain={"x": [-1, 1], "y": [-1, 1]},
+            domain={"x": [-1, 1], "y": [-1, 1], "t": [0.0, 1.0]},
             gt_source="fv_hll",
         ),
-        coords={"x": np.linspace(-1, 1, 5), "y": np.linspace(-1, 1, 5)},
+        coords={
+            "x": np.linspace(-1, 1, 5),
+            "y": np.linspace(-1, 1, 5),
+            "t": np.linspace(0.0, 1.0, 3),
+        },
         fields={
-            "h": np.ones((5, 5)),
-            "u": np.zeros((5, 5)),
-            "v": np.zeros((5, 5)),
+            "h": np.ones((3, 5, 5)),
+            "u": np.zeros((3, 5, 5)),
+            "v": np.zeros((3, 5, 5)),
             "zb": np.zeros((5, 5)),
         },
     )

@@ -52,6 +52,8 @@ from pinn_bath.losses import (
     positivity,
     swe_residual,
     tikhonov,
+    tv_1d,
+    tv_2d,
     wall_bc_loss,
 )
 from pinn_bath.metrics import baseline_rmse_zb, evaluate_zb
@@ -154,6 +156,7 @@ class AdamLBFGSTrainer:
         zero = torch.zeros((), dtype=dtype, device=self.device)
         L_data = data_mse(eta_pred, self.obs_values["eta"]) if "eta" in self.obs_values else zero
         L_data_u = data_mse(out_obs["u"], self.obs_values["u"]) if "u" in self.obs_values else zero
+        L_data_v = data_mse(out_obs["v"], self.obs_values["v"]) if "v" in self.obs_values else zero
         # Optional wet-mask: when ``eps_wet > 0`` in the case constants,
         # weight each squared residual by a smooth wet indicator
         # ``sigmoid((h - eps_wet)/scale)``, so dry cells (where ``h``
@@ -170,28 +173,91 @@ class AdamLBFGSTrainer:
         L_tikh = tikhonov(out_coll["zb"])
         L_bc = self._compute_bc_loss(dtype)
         L_ic = self._compute_ic_loss(dtype)
+        L_tv = self._compute_tv_loss(dtype)
+        L_dry = self._compute_dry_loss(out_coll, dtype)
 
         total = (
             w.data * L_data
             + w.data_u * L_data_u
+            + w.data_v * L_data_v
             + w.pde * L_pde
             + w.pos * L_pos
             + w.tikh * L_tikh
             + w.bc * L_bc
             + w.ic * L_ic
+            + w.tv * L_tv
+            + w.dry * L_dry
         )
 
         losses = {
             "data": float(L_data.item()),
             "data_u": float(L_data_u.item()),
+            "data_v": float(L_data_v.item()),
             "pde": float(L_pde.item()),
             "pos": float(L_pos.item()),
             "tikh": float(L_tikh.item()),
             "bc": float(L_bc.item()),
             "ic": float(L_ic.item()),
+            "tv": float(L_tv.item()),
+            "dry": float(L_dry.item()),
             "total": float(total.item()),
         }
         return total, losses
+
+    def _compute_tv_loss(self, dtype: torch.dtype) -> torch.Tensor:
+        """Total-variation regularisation on ``z_b`` over the case spatial grid.
+
+        Skips the model evaluation when ``w.tv == 0``. Otherwise queries the
+        bathymetry network on the case's structured spatial grid (sorted x,
+        and y in 2D) and applies :func:`pinn_bath.losses.tv_1d` /
+        :func:`pinn_bath.losses.tv_2d`.
+
+        Note: TV needs a *structured* grid (neighbour-based), so we evaluate
+        on ``case.coords`` rather than on the random collocation points.
+        """
+        if self.cfg.loss.tv == 0.0:
+            return torch.zeros((), dtype=dtype, device=self.device)
+        import numpy as np  # local to avoid top-level import in the hot path
+
+        case = self.case
+        x_np = np.asarray(case.coords["x"], dtype=np.float64)
+        x_t = torch.as_tensor(x_np, dtype=dtype, device=self.device).reshape(-1, 1)
+        if case.metadata.spatial_dim == 1:
+            zb_pred = self.model({"x": x_t})["zb"]
+            return tv_1d(zb_pred, x_t)
+        y_np = np.asarray(case.coords["y"], dtype=np.float64)
+        Xg, Yg = np.meshgrid(x_np, y_np)  # (Ny, Nx)
+        xy_x = torch.as_tensor(Xg.reshape(-1), dtype=dtype, device=self.device).reshape(-1, 1)
+        xy_y = torch.as_tensor(Yg.reshape(-1), dtype=dtype, device=self.device).reshape(-1, 1)
+        zb_pred = self.model({"x": xy_x, "y": xy_y})["zb"].reshape(Yg.shape)
+        return tv_2d(
+            zb_pred, x_t.reshape(-1), torch.as_tensor(y_np, dtype=dtype, device=self.device)
+        )
+
+    def _compute_dry_loss(
+        self, out_coll: dict[str, torch.Tensor], dtype: torch.dtype
+    ) -> torch.Tensor:
+        """Dry-cell penalty: ``mean( wet_indicator(h) * (u² + v²) )``.
+
+        ``wet_indicator = sigmoid((eps_dry - h)/scale)`` is ≈1 where the
+        domain is dry, ≈0 where wet. Drives the velocity toward zero in
+        dry cells where it would otherwise inject spurious momentum (h
+        never reaches 0 via softplus). Skips computation when ``w.dry == 0``.
+
+        Reads ``eps_dry`` and ``wet_scale`` from
+        ``case.metadata.constants`` (defaults 1e-4 and ``eps_dry``).
+        """
+        if self.cfg.loss.dry == 0.0:
+            return torch.zeros((), dtype=dtype, device=self.device)
+        c = self.case.metadata.constants
+        eps_dry = float(c.get("eps_dry", 1.0e-4))
+        wet_scale = float(c.get("wet_scale", eps_dry))
+        h = out_coll["h"]
+        dry_indicator = torch.sigmoid((eps_dry - h) / wet_scale)
+        sq_speed = out_coll["u"] ** 2
+        if "v" in out_coll:
+            sq_speed = sq_speed + out_coll["v"] ** 2
+        return torch.mean(dry_indicator * sq_speed)
 
     def _friction_from_case(self) -> tuple[str, dict[str, float]]:
         """Pick friction model + params from ``case.metadata.constants``.
