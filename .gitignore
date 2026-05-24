@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Node (Slides uses vite)
+node_modules/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.pyright_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.cover
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Training outputs (rebuildable)
+runs/
+
+# Large generated figures (PNGs kept; PDFs/SVGs rebuildable)
+**/figures/*.pdf
+**/figures/*.svg
+
+# Ground truth .npz (rebuildable via ground_truth.py / generate_and_plot.py)
+**/data/*.npz
+
+# Checkpoints
+Experiments/**/checkpoints/
+
+# External benchmark datasets (~1.4 GB; see README to fetch from upstream)
+Experiments/datasets/
+
+# Cloned reference repos (kept out of main repo; clone separately if needed)
+Experiments/01-subcritical-bump-1d/reference_dazzi2024/
+
+# Personal Obsidian vault (notes, literature PDFs ~330 MB copyrighted, scratch)
+# Kept local; not part of the public thesis repo.
+Notes/
+
+# Build artefacts: keep LaTeX sources, drop the compiled PDF (rebuildable)
+Report/main.pdf
+
+# LaTeX intermediates
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc

@@ -1,0 +1,122 @@
+\section{Definición del Problema}
+\label{sec:problema}
+
+Se observa la superficie libre del agua y, cuando está disponible, el flujo, y
+se desea recuperar la geometría del fondo que no se ha medido. Para que esa
+recuperación sea posible se necesita un modelo físico que vincule lo observable
+en la superficie con el fondo desconocido: las ecuaciones de aguas someras
+(SWE). Esta sección deriva brevemente las SWE, enuncia las hipótesis bajo las
+que son válidas, explica por qué su estructura permite la inversión, y fija la
+notación empleada en el resto del documento.
+
+\subsection{De Navier--Stokes a las ecuaciones de aguas someras}
+
+El punto de partida son las ecuaciones de Navier--Stokes para un fluido
+incompresible, es decir, la conservación de masa y de cantidad de movimiento
+\cite{vreugdenhil1994, vallis2017}. Las SWE se obtienen integrándolas en la
+vertical bajo las siguientes hipótesis:
+
+\begin{enumerate}
+  \item \textbf{Continuo e incompresibilidad.} El agua se trata como un medio
+        continuo de densidad constante $\rho$.
+  \item \textbf{Aguas someras (onda larga).} La escala vertical es mucho menor
+        que la horizontal, $(H/L)^2 \ll 1$. La aceleración vertical es
+        despreciable y la presión resulta hidrostática, $\pd{p}{z} = -\rho g$,
+        de donde $p = \rho g\,(\eta - z)$.
+  \item \textbf{Velocidad uniforme en la vertical.} El perfil vertical de
+        velocidad se considera aproximadamente uniforme; todas las variables de
+        las SWE son promedios en la profundidad.
+  \item \textbf{Fondo impermeable y fijo.} No hay flujo a través del lecho y la
+        batimetría no cambia en el tiempo, $\pd{\zb}{t} = 0$; en la superficie
+        libre se impone la condición cinemática.
+  \item \textbf{Cierre de fricción.} El esfuerzo de fondo se parametriza con la
+        fórmula de Manning; la viscosidad molecular es despreciable frente a la
+        turbulenta a números de Reynolds altos.
+\end{enumerate}
+
+Integrando la continuidad y la cantidad de movimiento entre el fondo
+$\zb(x,y)$ y la superficie $\eta(x,y,t)$ mediante la regla de Leibniz, y
+aplicando las condiciones de borde anteriores, se obtienen las SWE
+bidimensionales en forma primitiva:
+
+\begin{align}
+  \pd{h}{t} + \pd{(hu)}{x} + \pd{(hv)}{y} &= 0,
+    \label{eq:swe-cont}\\
+  \pd{u}{t} + u\pd{u}{x} + v\pd{u}{y} &= -\,g\,\pd{(h+\zb)}{x} - S_{fx},
+    \label{eq:swe-momx}\\
+  \pd{v}{t} + u\pd{v}{x} + v\pd{v}{y} &= -\,g\,\pd{(h+\zb)}{y} - S_{fy},
+    \label{eq:swe-momy}
+\end{align}
+
+donde $h$ es la profundidad, $(u,v)$ las velocidades promediadas en la
+vertical, $\zb$ la batimetría y $S_{fx} = g\,n^2\,u\,\lVert\mathbf{u}\rVert /
+h^{4/3}$ la pendiente de fricción de Manning (coeficiente $n$; análogo para
+$S_{fy}$). La misma física admite formas equivalentes. En la forma
+\emph{conservativa} las incógnitas son las cantidades conservadas
+$(h, hu, hv)$ y las ecuaciones se escriben como la divergencia de unos flujos
+más un término fuente que recoge la pendiente del fondo y la fricción; conserva
+masa y momento de forma exacta, pero obliga a recuperar la velocidad como
+$u = hu/h$, inestable cuando $h \to 0$ (zonas que se secan). La forma
+\emph{primitiva-conservativa} multiplica el residuo primitivo por una matriz
+que reescala automáticamente cada ecuación, uniendo la estabilidad de las
+variables primitivas con la ponderación de la conservativa. La elección de la
+forma del residuo empleada por el método se discute en la
+Sección~\ref{sec:method}.
+
+\subsection{Por qué la batimetría es recuperable}
+
+El término de presión hidrostática introduce el acoplamiento
+$-\,g\,\pd{(h+\zb)}{x} = -\,g\,\pd{\eta}{x}$, con $\eta = h + \zb$ la
+elevación de la superficie libre. Ese término es el \emph{canal de información}
+entre lo observable ($\eta$) y lo desconocido ($\zb$): una sola instantánea es
+equifinal, pues infinitas particiones $(h,\zb)$ producen el mismo $\eta$, pero
+la evolución temporal del flujo depende de $\zb$ a través de este acoplamiento,
+lo que rompe la degeneración y vuelve tratable el problema inverso.
+
+\subsection{Validez y límite de aplicabilidad}
+
+Las SWE son válidas mientras $(H/L)^2 \ll 1$, equivalente a $k h \ll 1$ para
+una perturbación de número de onda $k$: ondas largas, no dispersivas, que se
+propagan a velocidad $c = \sqrt{g h}$ \cite{leveque2002, vallis2017}. Cuando
+$k h$ se acerca a la unidad aparecen efectos dispersivos que las SWE no
+capturan; este límite se manifiesta empíricamente en el Exp.~6
+(Sección~\ref{sec:exp6}), con datos de canal de oleaje en régimen
+$k h \approx 1.3$.
+
+\subsection{Diferencias con Navier--Stokes}
+
+Frente a las ecuaciones de Navier--Stokes tridimensionales, las SWE reducen el
+problema de 3D a 2D; la hipótesis hidrostática elimina la ecuación vertical de
+cantidad de movimiento; no se resuelve el perfil vertical de velocidad sino su
+promedio; la turbulencia tridimensional no se resuelve, sino que se parametriza
+mediante la fricción de fondo. El costo computacional es mucho menor, a cambio
+de un dominio de validez acotado a flujos de aguas someras.
+
+\subsection{Notación}
+
+La Tabla~\ref{tab:notacion} resume la notación empleada en el resto del
+documento.
+
+\begin{table}[H]
+\centering
+\caption{Notación empleada en el documento.}
+\label{tab:notacion}
+\begin{tabular}{ll}
+\toprule
+Símbolo & Significado \\
+\midrule
+$x,\ y$              & Coordenadas horizontales \\
+$t$                  & Tiempo \\
+$h$                  & Profundidad del agua \\
+$u,\ v$              & Velocidades promediadas en la vertical \\
+$\zb$                & Batimetría (elevación del fondo), $\pd{\zb}{t}=0$ \\
+$\eta = h + \zb$     & Elevación de la superficie libre \\
+$g$                  & Aceleración de gravedad \\
+$n$                  & Coeficiente de Manning \\
+$q = h u$            & Caudal por unidad de ancho \\
+$S_f$                & Pendiente de fricción \\
+$Fr = u/\sqrt{g h}$  & Número de Froude \\
+$c = \sqrt{g h}$     & Velocidad de onda larga \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,88 @@
+\section{Introducción}
+\label{sec:intro}
+
+% P1 — Definición + fuente
+La batimetría es la medición y representación de la profundidad y el relieve
+del fondo de un cuerpo de agua respecto de un nivel de referencia vertical, y
+constituye en esencia el equivalente sumergido de la topografía terrestre
+\cite{wolfl2019, talley2011}. Describe tanto la profundidad local como la
+forma del lecho de océanos, estuarios, ríos y lagos.
+
+% P2 — Por qué importa
+La batimetría es un insumo fundamental de la hidráulica, la hidrología y las
+ciencias costeras y oceánicas. El lecho impone la condición de borde inferior
+sobre la que se desarrolla todo el flujo, de modo que la propagación de
+inundaciones y tsunamis, la circulación de mareas y corrientes, el transporte
+de sedimentos y la seguridad de la navegación dependen de ella. En la práctica,
+la fidelidad de cualquier modelo hidrodinámico está acotada por la fidelidad de
+la batimetría que se le suministra.
+
+% P3 — Cómo funciona el sonar multihaz
+El levantamiento batimétrico directo se realiza principalmente mediante dos
+tecnologías. La primera es la ecosonda multihaz, instalada en una embarcación,
+que emite un abanico de haces acústicos transversales a la trayectoria y mide
+el tiempo de viaje de ida y vuelta de cada eco reflejado por el fondo. Conocida
+la velocidad del sonido en la columna de agua, ese tiempo y el ángulo del haz
+determinan la profundidad y la posición de cada sondaje sobre una franja ancha,
+que se cubre de forma continua a medida que la embarcación avanza
+\cite{lurton2010}.
+
+% P4 — Cómo funciona el LiDAR batimétrico
+La segunda es el LiDAR batimétrico aerotransportado, que emite pulsos de láser
+de longitud de onda verde capaces de penetrar la columna de agua. La
+profundidad se obtiene de la diferencia temporal entre el retorno reflejado por
+la superficie libre y el reflejado por el fondo, lo que permite cartografiar con
+rapidez aguas someras y claras desde una aeronave \cite{guenther2000,
+szafarczyk2023}.
+
+% P5 — Brecha de cobertura / costo (citada, redacción conservadora)
+Ambas técnicas son precisas pero lentas, costosas y logísticamente limitadas:
+requieren plataformas dedicadas, condiciones operativas favorables y campañas
+que deben repetirse, porque el lecho evoluciona por sedimentación y erosión.
+Como resultado, solo una fracción del fondo oceánico mundial está cartografiada
+con métodos acústicos modernos, del orden de una cuarta parte a mediados de la
+década de 2020 frente a apenas unos pocos puntos porcentuales una década antes,
+y la cobertura por sonar multihaz de alta resolución es considerablemente menor
+\cite{wolfl2019}. Esta brecha persistente motiva el desarrollo de métodos
+indirectos que infieran el fondo a partir de observaciones más accesibles.
+
+% P6 — Genérico, sin nombrar Chile
+%% IEEE-CUT: en la versión IEEE este párrafo se reduce a media frase ("regiones costeras con datos escasos").
+El déficit es más severo donde los levantamientos son escasos, gruesos o están
+desactualizados: incluso un sitio ya sondeado pierde vigencia porque el lecho
+evoluciona por sedimentación y erosión, de modo que la necesidad no es solo
+cartografiar por primera vez, sino actualizar batimetría obsoleta o de baja
+resolución, a menudo en tramos de difícil acceso. Frente a ese costo, el
+monitoreo del nivel del agua es barato, continuo y permanente, y no requiere un
+levantamiento batimétrico para operar: los registros de nivel mareal y de nivel
+y caudal fluvial se acumulan de forma sostenida justo allí donde falta una
+batimetría distribuida de alta resolución. Las mediciones de velocidad
+superficial aportan una restricción más fuerte, pero son más escasas y suelen
+asociarse a despliegues dedicados; aun así pueden obtenerse de forma
+independiente, por ejemplo mediante boyas a la deriva, velocimetría por video o
+radar de alta frecuencia, por lo que el valor central del enfoque descansa sobre
+la señal de nivel y su variación temporal. Surge así la oportunidad de un método
+inverso que actualice batimetría obsoleta o gruesa, incluso en tramos
+inaccesibles, a partir de datos de superficie que ya se registran de forma
+continua, en lugar de encargar nuevas campañas.
+
+% P7 — Idea del problema inverso (lenguaje natural, sin notación)
+La idea central de este trabajo es, en lugar de medir el fondo directamente,
+inferirlo de la huella que deja sobre el agua. La forma del lecho controla cómo
+se elevan y deforman la superficie libre y cómo se aceleran las corrientes; por
+lo tanto, las observaciones de la superficie y del flujo contienen información
+sobre el fondo no observado. Recuperar el lecho a partir de esas observaciones
+es un problema inverso, mal planteado en general, que se vuelve tratable cuando
+se lo restringe con la física que gobierna el agua somera.
+
+% P8 — El enfoque (conceptual; notación diferida)
+Para resolver ese problema inverso, esta tesis adopta las \textbf{redes
+neuronales informadas por física} (PINNs) \cite{raissi2019}: redes entrenadas
+para ser consistentes, de forma simultánea, con las observaciones de superficie
+y con las ecuaciones de aguas someras que gobiernan el flujo. Bajo esa doble
+restricción, el fondo desconocido emerge como el campo que explica los datos y
+satisface las ecuaciones a la vez. El enfoque emplea, conceptualmente, un
+modelo para el campo de flujo y otro independiente para el lecho. La
+formulación matemática de las ecuaciones de aguas someras y toda la notación se
+introducen en la Sección~\ref{sec:problema}; la arquitectura y la
+función de pérdida, en la Sección~\ref{sec:method}.

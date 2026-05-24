@@ -1,0 +1,204 @@
+\section{Casos sintéticos: planteamiento y soluciones de referencia}
+\label{app:casos-sinteticos}
+
+Este apéndice especifica, para cada caso de prueba con datos sintéticos
+(Exp.~1 a~5), el planteamiento matemático del problema --- ecuaciones de
+gobierno, dominio, condiciones de borde e iniciales y batimetría --- y su
+solución de referencia. Para los casos con solución analítica cerrada
+(Exp.~1, 2 y 5) se da la expresión exacta; para los casos sin forma cerrada
+(Exp.~3 y 4) la referencia es la solución numérica de un esquema de volúmenes
+finitos. Las ecuaciones de aguas someras (SWE) y su notación se introdujeron
+en la Sección~\ref{sec:problema}; aquí se particularizan a cada caso. La
+gravedad es $g = 9.81$\,m\,s$^{-2}$.
+
+\subsection{Exp.\ 1 --- Bump subcrítico 1D}
+\label{app:exp1}
+
+\paragraph{Problema.}
+Flujo 1D estacionario sin fricción sobre un bump parabólico, gobernado por las
+SWE estacionarias (caudal específico $q = h u$ constante y conservación de la
+energía). La batimetría es
+\begin{equation}
+  \zb(x) =
+  \begin{cases}
+    H_b - \dfrac{H_b}{w^2}\,(x - x_0)^2, & |x - x_0| < w,\\[1.2ex]
+    0, & \text{en otro caso,}
+  \end{cases}
+\end{equation}
+con altura $H_b = 0.2$\,m, semiancho $w = 2$\,m y centro $x_0 = 0$, en el
+dominio $[-10, 10]$\,m. Las condiciones de borde son el caudal específico
+$q = 4.42$\,m$^2$/s aguas arriba y la profundidad $h_{\text{down}} = 2.0$\,m
+aguas abajo.
+
+\paragraph{Solución de referencia (analítica).}
+En flujo estacionario sin fricción la energía específica se conserva a lo
+largo del canal (ecuación de Bernoulli):
+\begin{equation}
+  \frac{q^2}{2 g\,h(x)^2} + h(x) + \zb(x) = C,
+  \label{eq:app-bernoulli}
+\end{equation}
+donde la constante $C$ se fija con la condición aguas abajo,
+$C = q^2/(2 g\,h_{\text{down}}^2) + h_{\text{down}} + \zb(x_{\text{fin}})$.
+Multiplicando \eqref{eq:app-bernoulli} por $h^2$ se obtiene, en cada $x$, la
+ecuación cúbica
+\begin{equation}
+  h^3 + \bigl(\zb(x) - C\bigr)\,h^2 + \frac{q^2}{2 g} = 0,
+\end{equation}
+de cuyas raíces se toma la \emph{subcrítica}: real, positiva y mayor que la
+profundidad crítica $h_c = (q^2/g)^{1/3}$. La velocidad y la superficie libre
+son $u(x) = q/h(x)$ y $\eta(x) = h(x) + \zb(x)$. El planteamiento sigue a
+Delestre et al.\ \cite{delestre2013} (compilación SWASHES) y a Dazzi et al.\
+\cite{dazzi2024}.
+
+\subsection{Exp.\ 2 --- Cuenca de Thacker 1D}
+\label{app:exp2}
+
+\paragraph{Problema.}
+Oscilación no lineal de una masa de agua en una cuenca parabólica cerrada,
+gobernada por las SWE 1D transitorias sin fricción. La batimetría es
+\begin{equation}
+  \zb(x) = h_0\left(\frac{x^2}{a^2} - 1\right),
+\end{equation}
+con profundidad característica $h_0 = 0.5$\,m y semiancho $a = 1$\,m, en el
+dominio $[-2, 2]$\,m. El problema es cerrado: no hay condiciones de borde de
+flujo, y la condición inicial es la solución analítica evaluada en $t = 0$.
+
+\paragraph{Solución de referencia (analítica).}
+Thacker \cite{thacker1981} obtuvo una solución exacta de superficie libre
+plana con línea de costa móvil. La frecuencia angular y el período de
+oscilación son
+\begin{equation}
+  \omega = \frac{\sqrt{2 g h_0}}{a},
+  \qquad T = \frac{2\pi}{\omega} \approx 2.006~\text{s},
+\end{equation}
+y los campos
+\begin{align}
+  h(x,t)    &= \max\!\left(0,\;
+               h_0\left[1 - \left(\frac{x + \tfrac{1}{2}\cos(\omega t)}{a}\right)^{\!2}\,\right]\right),\\
+  u(x,t)    &= \tfrac{1}{2}\,\omega\,\sin(\omega t)
+               \quad\text{donde } h > 0\ \ (\text{0 en seco}),\\
+  \eta(x,t) &= h(x,t) + \zb(x).
+\end{align}
+La superficie libre permanece plana y oscila en el tiempo, mientras la línea
+de costa se desplaza. El caso está también compilado en SWASHES
+\cite{delestre2013}.
+
+\subsection{Exp.\ 3 --- Dos cilindros 2D}
+\label{app:exp3}
+
+\paragraph{Problema.}
+Flujo 2D transitorio sobre dos obstáculos cilíndricos sólidos, gobernado por
+las SWE 2D en forma conservativa,
+$\bm{U}_t + \bm{F}(\bm{U})_x + \bm{G}(\bm{U})_y = \bm{S}(\bm{U}, \zb)$ con
+$\bm{U} = (h, hu, hv)$. La configuración se replica fielmente del benchmark
+2D de Ruppenthal y Kuzmin \cite{ruppenthal2026} (Sección~7.2). La batimetría
+consiste en dos cilindros con paredes verticales (sin suavizado),
+\begin{equation}
+  \zb(x,y) =
+  \begin{cases}
+    0.2\,\text{m}, & \text{si } \sqrt{(x-8)^2 + (y-8)^2} \le 4\,\text{m}, \\
+    0.3\,\text{m}, & \text{si } \sqrt{(x-15)^2 + (y-15)^2} \le 2\,\text{m}, \\
+    0,             & \text{en otro caso,}
+  \end{cases}
+\end{equation}
+en el dominio $[0, 25]^2$\,m. Los dos cilindros (alturas $H_1 = 0.2$ y
+$H_2 = 0.3$\,m, radios $R_1 = 4$ y $R_2 = 2$\,m) están alineados sobre la
+diagonal $x = y$, paralelos a la dirección del flujo inicial. La condición
+inicial corresponde a superficie libre en reposo y velocidad uniforme:
+\begin{equation}
+  \eta(x,y,0) = h + \zb = 2\,\text{m}, \qquad
+  \bm{v}(x,y,0) = (2.21,\ 2.21)\,\text{m/s},
+\end{equation}
+de modo que la profundidad inicial $h(x,y,0) = 2 - \zb(x,y)$ es menor sobre
+los cilindros que sobre el lecho plano. Tiempo final $T = 60$\,s con paso
+$\Delta t = 10^{-2}$\,s.
+
+\paragraph{Solución de referencia (numérica).}
+Este caso no admite solución analítica cerrada. La referencia se obtiene
+resolviendo las SWE 2D sobre una malla cartesiana de $50\times 50$ celdas
+($\Delta x = \Delta y = 0.5$\,m), con un esquema de volúmenes finitos, flujos
+numéricos de tipo HLL (Harten--Lax--van~Leer) sobre estados reconstruidos
+por la técnica hidrostática de Audusse \cite{audusse2004}, well-balanced
+para topografía discontinua; el término fuente topográfico queda absorbido
+en correcciones de presión en las interfaces, siguiendo en lo demás la
+formulación estándar de LeVeque \cite{leveque2002}. Las condiciones de
+frontera son Dirichlet de inflow en las dos caras por las que entra el
+flujo --$x = 0$ y $y = 0$-- prescribiendo el estado uniforme
+$(h, u, v) = (\eta_0, u_0, v_0)$ vía celdas fantasma; las caras opuestas
+($x = L_x$, $y = L_y$) usan extrapolación de gradiente cero (outflow).
+Ruppenthal y Kuzmin no especifican BCs explícitamente para §7.2; ésta
+es la elección más natural para preservar la corriente uniforme
+prescrita en la CI a lo largo de los 60\,s simulados. Ruppenthal y Kuzmin emplean un esquema de
+elementos finitos con limiters de flujo (MCL) sobre la misma malla; ambas
+son discretizaciones estándar y convergentes de las SWE.
+
+\subsection{Exp.\ 4 --- Topografía variable 2D (Tian dT10)}
+\label{app:exp4}
+
+\paragraph{Problema.}
+Flujo 2D transitorio sobre una topografía oscilatoria, gobernado por las SWE
+2D en forma conservativa. La configuración se replica fielmente del caso
+dinámico \emph{dT10} de Tian et al.\ \cite{tian2025} (Sección~3.3),
+denominado allí ``problema mareal'' por analogía con la geometría de fondo
+(no por la presencia de forzamiento mareal externo). La topografía es
+\begin{equation}
+  \zb(x,y) = 1 + 0{.}01\,\cos\!\left(\frac{\pi x}{2}\right)
+                          \cos\!\left(\frac{\pi y}{2}\right),
+\end{equation}
+en el dominio $(x,y) \in [-2, 2]^2$\,m. Tiene máximos en el centro y en las
+cuatro esquinas ($\zb = 1{.}01$\,m) y mínimos en los puntos medios de los
+bordes ($\zb = 0{.}99$\,m). La condición inicial es desbalanceada respecto a
+la superficie libre:
+\begin{equation}
+  h(x,y,0) = \zb(x,y), \qquad u(x,y,0) = v(x,y,0) = 0,
+\end{equation}
+de modo que la superficie libre inicial $\eta(x,y,0) = h + \zb = 2\zb$ hereda
+el mismo patrón de máximos y mínimos. Bajo gravedad el agua fluye desde las
+regiones altas (centro y esquinas) hacia las bajas (mitades de los bordes).
+Las condiciones de borde son \emph{periódicas} en $x$ y $y$. Tiempo final
+$T = 0{.}5$\,s.
+
+\paragraph{Solución de referencia (numérica).}
+Sin forma cerrada. Tian resuelve dT10 con el esquema entropy-stable ES1 de
+Fjordholm et al.\ (2011) sobre una malla muy fina
+($\Delta x = \Delta y = 0{.}01$\,m, CFL $= 0{.}25$). En esta tesis la
+referencia se obtiene con el mismo solver FV-HLL del Exp.~3
+(LeVeque \cite{leveque2002}) con condiciones de borde periódicas. Ambos
+son esquemas estándar y convergentes para SWE con topografía variable.
+
+\subsection{Exp.\ 5 --- Paraboloide de Thacker 2D}
+\label{app:exp5}
+
+\paragraph{Problema.}
+Oscilación axisimétrica de una masa de agua en un paraboloide de revolución,
+gobernada por las SWE 2D transitorias sin fricción. La batimetría es
+\begin{equation}
+  \zb(x,y) = -h_0\left(1 - \frac{r^2}{a^2}\right),
+  \qquad r = \sqrt{(x - x_c)^2 + (y - y_c)^2},
+\end{equation}
+con $h_0 = 0.1$\,m, $a = 1$\,m y centro $(x_c, y_c) = (2, 2)$\,m, en el dominio
+$[0, 4]^2$\,m. El problema es cerrado, con una frontera seco-mojado móvil.
+
+\paragraph{Solución de referencia (analítica).}
+Thacker \cite{thacker1981} obtuvo la solución exacta axisimétrica (compilada
+en SWASHES \cite{delestre2013}). Con
+\begin{equation}
+  \omega = \frac{\sqrt{8 g h_0}}{a},
+  \qquad
+  A = \frac{a^2 - r_0^2}{a^2 + r_0^2},
+\end{equation}
+donde $r_0 = 0.8$\,m fija la amplitud de la oscilación, los campos son
+\begin{align}
+  h(x,y,t) &= h_0\left[
+               \frac{\sqrt{1 - A^2}}{1 - A\cos(\omega t)} - 1
+               - \frac{r^2}{a^2}\!
+                 \left(\frac{1 - A^2}{(1 - A\cos(\omega t))^2} - 1\right)
+              \right] - \zb(x,y),\\
+  u(x,y,t) &= \frac{1}{2}\,
+              \frac{\omega A \sin(\omega t)}{1 - A\cos(\omega t)}\,(x - x_c),\\
+  v(x,y,t) &= \frac{1}{2}\,
+              \frac{\omega A \sin(\omega t)}{1 - A\cos(\omega t)}\,(y - y_c),
+\end{align}
+con $h$ truncada a $0$ en la zona seca y $u = v = 0$ allí; la superficie libre
+es $\eta = h + \zb$. La superficie permanece como un plano inclinado que
+oscila en el tiempo.

@@ -1,0 +1,85 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Idioma y codificación ──
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% ── Tipografía ──
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Matemáticas ──
+\usepackage{amsmath,amssymb,mathtools,bm}
+
+% ── Tablas y figuras ──
+\usepackage{booktabs,multirow}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+
+% ── Código y colores ──
+\usepackage{xcolor}
+\usepackage{listings}
+
+% ── Layout ──
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ── Referencias ──
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=green!50!black,urlcolor=blue!70!black]{hyperref}
+
+% ── Macros ──
+\newcommand{\zb}{z_b}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\RMSE}{\mathrm{RMSE}}
+\newcommand{\NRMSE}{\mathrm{NRMSE}}
+\DeclareMathOperator{\relu}{ReLU}
+\DeclareMathOperator{\softplus}{softplus}
+\newcommand{\pendiente}[1]{\textit{[Pendiente: #1]}}
+
+% ── Metadata ──
+\title{Inversión de Batimetría mediante Redes Neuronales Informadas por Física:\\
+       Revisión de Literatura y Resultados Experimentales}
+\author{Etienne Calderon}
+\date{\today}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este reporte resume el estado del arte en inversión de batimetría
+basada en las ecuaciones de aguas someras (SWE) mediante redes neuronales
+informadas por física (PINNs), y presenta los resultados experimentales
+obtenidos hasta la fecha. Se comparan arquitecturas, formulaciones de ecuaciones
+y estrategias de regularización de cinco trabajos clave, y se validan
+las decisiones de diseño del enfoque propuesto con experimentos sintéticos.
+Un experimento con datos reales de laboratorio (Angel et al.) revela una
+limitación estructural de la inversión PINN de penalización blanda frente
+a métodos de restricción dura, documentada como hallazgo y trabajo futuro.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ── Secciones ──
+\input{sections/01-introduccion}
+\input{sections/01b-definicion-problema}
+\input{sections/02-revision-literatura}
+\input{sections/03-metodologia}
+\input{sections/04-experimentos}
+\input{sections/05-comparacion-literatura}
+\input{sections/06-conclusiones}
+
+% ── Apéndices ──
+\appendix
+\input{sections/07-apendice-casos-sinteticos}
+
+% ── Bibliografía ──
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,94 @@
+"""Build A1/A2/A3 architectures at small/medium/large parameter budgets.
+
+The :data:`BUDGET_TARGETS` dict gives nominal parameter counts; the actual
+count of an instantiated model depends on the case (spatial dimension,
+whether ``t`` is an input, how many output fields) and is verified to fall
+within :data:`BUDGET_TOL` of the target by the architecture tests.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pinn_bath.models.a1 import A1TwoNets
+from pinn_bath.models.a2 import A2Monolithic
+from pinn_bath.models.a3 import A3PerField
+from pinn_bath.models.base import BaseModel, Field
+
+BUDGET_TARGETS: dict[str, int] = {
+    "small": 20_000,
+    "medium": 100_000,
+    "large": 500_000,
+}
+
+# Allowed deviation from BUDGET_TARGETS. The fair-comparison protocol asks
+# for equal budget across designs at each grid point; some spread is
+# unavoidable because A1 has Fourier features and per-field A3 has more nets
+# in 2D. 35% absorbs that across the 9 (arch, budget) x 3 (case_kind) cells.
+BUDGET_TOL: float = 0.35
+
+
+_SHAPES: dict[tuple[str, str], dict[str, Any]] = {
+    # A1: SolutionNet + BathymetryNet with per-axis Fourier features (16, sigma=2).
+    ("A1", "small"): dict(
+        sol_depth=4, sol_width=64, bath_depth=3, bath_width=32, ff_n=16, ff_sigma=2.0
+    ),
+    ("A1", "medium"): dict(
+        sol_depth=5, sol_width=128, bath_depth=4, bath_width=64, ff_n=16, ff_sigma=2.0
+    ),
+    ("A1", "large"): dict(
+        sol_depth=6, sol_width=288, bath_depth=5, bath_width=144, ff_n=16, ff_sigma=2.0
+    ),
+    # A2: monolithic MLP, raw inputs.
+    ("A2", "small"): dict(depth=5, width=64),
+    ("A2", "medium"): dict(depth=6, width=140),
+    ("A2", "large"): dict(depth=7, width=300),
+    # A3: per-field MLPs, raw inputs.
+    ("A3", "small"): dict(depth=5, width=36),
+    ("A3", "medium"): dict(depth=8, width=60),
+    ("A3", "large"): dict(depth=12, width=120),
+}
+
+
+def build(
+    arch: str,
+    budget: str,
+    *,
+    spatial_dim: int,
+    has_t: bool,
+    output_fields: tuple[Field, ...],
+    ff_seed: int | None = None,
+) -> BaseModel:
+    """Instantiate ``arch`` at ``budget`` for the given case.
+
+    Parameters
+    ----------
+    arch
+        ``"A1"``, ``"A2"``, or ``"A3"``.
+    budget
+        ``"small"``, ``"medium"``, or ``"large"``.
+    spatial_dim
+        1 or 2.
+    has_t
+        Whether ``t`` is an input axis (transient vs steady).
+    output_fields
+        Subset of ``("h", "u", "v", "zb")``; must include ``"h"``.
+    ff_seed
+        Optional seed for A1's Fourier feature matrices (ignored by A2/A3).
+    """
+    if (arch, budget) not in _SHAPES:
+        raise ValueError(f"Unknown (arch, budget) pair: {arch!r}, {budget!r}")
+    shape = _SHAPES[(arch, budget)]
+    common = dict(spatial_dim=spatial_dim, has_t=has_t, output_fields=tuple(output_fields))
+    if arch == "A1":
+        return A1TwoNets(**common, ff_seed=ff_seed, **shape)
+    if arch == "A2":
+        return A2Monolithic(**common, **shape)
+    if arch == "A3":
+        return A3PerField(**common, **shape)
+    raise ValueError(f"Unknown arch: {arch}")
+
+
+def shape_for(arch: str, budget: str) -> dict[str, Any]:
+    """Read-only access to the shape dict for ``(arch, budget)``."""
+    return dict(_SHAPES[(arch, budget)])

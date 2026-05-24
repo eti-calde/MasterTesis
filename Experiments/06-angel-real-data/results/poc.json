@@ -1,0 +1,25 @@
+{
+  "seed": 42,
+  "n_adam": 3000,
+  "n_lbfgs": 0,
+  "Nx": 136,
+  "Nt": 201,
+  "n_coll": 27336,
+  "inlet": "S1",
+  "obs": "S2",
+  "nrmse_full": 0.17058931616640405,
+  "rmse_full_mm": 34.062725405880954,
+  "nrmse_span": 0.22795560792511604,
+  "rmse_span_mm": 45.51744184207645,
+  "span": [
+    1.5,
+    9.0
+  ],
+  "angel_benchmark_nrmse": [
+    0.1,
+    0.14
+  ],
+  "train_min": 4.209962737560272,
+  "peak_vram_mb": 595.6484375,
+  "ms_per_adam_epoch": 84.19925475120544
+}

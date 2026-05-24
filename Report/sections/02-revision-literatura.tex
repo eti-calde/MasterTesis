@@ -1,0 +1,277 @@
+\section{Revisión de Literatura}
+\label{sec:lit}
+
+Esta sección resume seis trabajos representativos sobre reconstrucción de
+batimetría y modelado de aguas someras con redes neuronales y métodos de
+optimización, ordenados por relevancia para esta tesis. Cada uno se describe con
+la misma estructura: problema, entrada y salida, datos, método, resultados clave
+y relación con esta tesis. La Tabla~\ref{tab:lit-overview} los resume de un
+vistazo.
+
+%% IEEE-CUT: en la versión IEEE cada artículo se comprime a 1--2 frases; los bloques \paragraph{} detallados son solo para la tesis.
+
+\begin{table}[H]
+\centering
+\caption{Panorama de los trabajos revisados.}
+\label{tab:lit-overview}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Trabajo & Problema & Entrada $\to$ Salida & Método \\
+\midrule
+Dazzi (2024) & Directo               & BC, IC $\to (h,u,\zb)$      & PINN, MLP único \\
+Ohara (2024) & Inverso conjunto      & $u,\eta \to (h,u,v,\zb,n)$  & PINN, red por campo \\
+Tian (2025)  & Directo (formas)      & dominio $\to (h,u,v)$       & PINN, FNN única \\
+Chen (2023)  & Inverso (costero)     & oleaje $\to \zb$            & PINN, ec.\ de oleaje \\
+Angel (2024) & Inverso, datos reales & $\eta$ de sensores $\to \zb$ & Adjunto-EDP \\
+Liu (2024)   & Inverso, dos etapas   & $\eta \to \zb$              & Surrogado CNN \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Dazzi et al.\ (2024) --- PINNs con SWE aumentado}
+\label{sec:lit:dazzi}
+
+\paragraph{Problema.}
+\cite{dazzi2024} resuelven el problema \emph{directo} de las SWE con un sistema
+\emph{aumentado} que incorpora la batimetría como variable: a las ecuaciones de
+masa y momento se añaden dos relaciones. La primera, $\eta = h + \zb$, define la
+elevación de la superficie libre como suma de profundidad y fondo, y acopla así
+la incógnita ($\zb$) con la cantidad observable ($\eta$). La segunda,
+$\pd{\zb}{t} = 0$, impone que el fondo es estacionario, lo que obliga a la red a
+representar $\zb$ como un único campo espacial coherente con toda la evolución
+temporal del flujo.
+
+\paragraph{Entrada y salida.}
+Recibe condiciones de borde e iniciales del flujo y produce los campos
+$(h, u, \zb)$ de forma simultánea: la red aprende $\zb$ como parte de la
+solución en lugar de recibirla como entrada.
+
+\paragraph{Datos.}
+Casos con solución analítica o de referencia: agua en reposo sobre fondo plano,
+bump, escalón y parábola; flujos transitorios (perturbación, rotura de presa,
+rotura de presa sobre escalón y oscilación de Thacker); y flujo estacionario
+sobre un bump.
+
+\paragraph{Método.}
+Un único MLP (perceptrón multicapa) de 7 capas $\times$ 300 neuronas,
+implementado en NVIDIA Modulus. La ecuación $\pd{\zb}{t}=0$ no se impone
+estructuralmente, sino como un término más de la función de pérdida, con un peso
+de penalización de 100 que fija cuán fuerte se castiga su incumplimiento frente
+a los demás términos. La pendiente del fondo $\pd{\zb}{x}$ se obtiene por
+diferenciación automática, consistente con el marco PINN.
+
+\paragraph{Resultados clave.}
+Reportan el error de cada variable por caso (su Tabla~2); para el caso del bump,
+el RMSE (raíz del error cuadrático medio) de $\zb$ es $\approx 5{,}2$\,mm.
+Entrenamiento de 30\,000 épocas de Adam; código disponible en Zenodo.
+Limitación: dificultad con discontinuidades del fondo (escalón), donde la
+predicción se suaviza o muestra picos locales, consistente con el sesgo
+espectral de los PINNs.
+
+\paragraph{Relación con esta tesis.}
+Es la arquitectura de referencia: el diseño monolítico A2 del estudio
+comparativo (Sección~\ref{sec:arquitecturas}) imita su red única, y la propuesta
+de esta tesis (A1) la lleva a $\sim$18K parámetros mediante dos redes separadas,
+imponiendo $\pd{\zb}{t}=0$ de forma estructural (la red de batimetría no recibe
+$t$ como entrada) en lugar de como término de pérdida.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Ohara et al.\ (2024) --- Inversión conjunta de flujo y geometría}
+\label{sec:lit:ohara}
+
+\paragraph{Problema.}
+\cite{ohara2024} emplean un PINN para invertir \emph{conjuntamente} el flujo y
+la geometría del lecho de un cauce a partir de las SWE 2D de plano, recuperando
+variables difíciles de medir sin etiquetas directas para ellas.
+
+\paragraph{Entrada y salida.}
+Como datos de entrenamiento recibe mediciones \emph{dispersas} de velocidad
+superficial y de nivel de agua. Las redes, con entradas espaciales $(x,y)$,
+producen los campos estacionarios de profundidad $h$, velocidades $u$ y $v$, la
+cota del fondo $\zb$ y el coeficiente de rugosidad de Manning $n$.
+
+\paragraph{Datos.}
+La forma del fondo se midió en un experimento de laboratorio (canal con barras
+de arena, mediante tomografía de flujo); el campo de flujo se generó con un
+solver numérico 2D (Nays2D).
+
+\paragraph{Método.}
+Una red totalmente conectada \emph{separada por cada campo} ($h$, $u$, $v$,
+$\zb$); el coeficiente de rugosidad $n$ se optimiza como un parámetro más. Usa
+fricción de Manning e incorpora la conservación de masa (caudal constante por
+sección transversal) como \emph{restricción redundante}, lo que mejora de forma
+notable la convergencia y la precisión.
+
+\paragraph{Resultados clave.}
+Recupera la cota del fondo y la rugosidad sin datos de entrenamiento para esas
+variables; el error de la cota del fondo es del orden del 7--12\,\% de la
+profundidad de flujo uniforme. La precisión es robusta a observaciones
+espacialmente dispersas siempre que su resolución supere la longitud de onda de
+las formas del fondo.
+
+\paragraph{Relación con esta tesis.}
+Es el predecesor más directo: PINN, SWE e inversión conjunta de flujo y
+geometría a partir de observaciones dispersas. Su diseño de \emph{una red
+dedicada por variable} es la base del diseño A3 del estudio comparativo de
+arquitecturas (Sección~\ref{sec:arquitecturas}). Esta tesis se diferencia en
+que extiende el banco de pruebas al régimen transitorio 2D (Exp.~3 a 5),
+compara sistemáticamente formas del residuo y arquitecturas de red, y evalúa
+datos experimentales reales (Exp.~6 con Angel et al.\ \cite{angel2024}).
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Tian et al.\ (2025) --- Formas de ecuación para PINNs-SWE}
+\label{sec:lit:tian}
+
+\paragraph{Problema.}
+\cite{tian2025} comparan sistemáticamente formulaciones del residuo SWE para el
+problema \emph{directo} en 2D --- con topografía y términos de lluvia ---, con
+el fin de determinar qué forma de las ecuaciones produce mejor precisión y
+convergencia en un PINN.
+
+\paragraph{Entrada y salida.}
+Recibe el dominio espacio-temporal $(x,y,t)$ y produce los campos de flujo
+$(h,u,v)$. La topografía es un \emph{dato conocido}: funciones analíticas
+explícitas cuyas derivadas se calculan analíticamente y entran en el término
+fuente del residuo de la EDP.
+
+\paragraph{Datos.}
+Once casos de prueba: estáticos, con lluvia y dinámicos (rotura de presa 2D y
+circular, problema mareal y mareal con lluvia), con soluciones analíticas o de
+volúmenes finitos como referencia.
+
+\paragraph{Método.}
+El modelo es una \emph{única} red totalmente conectada (5 capas $\times$ 300
+neuronas, activación Tanh) con activación adaptativa por neurona (N-LAAF). Se
+comparan tres formas del residuo: primitiva $(h,u,v)$; primitiva-conservativa
+$\bm{R} = \bm{A}\,\bm{r}$ con
+$\bm{A} = \begin{psmallmatrix} 1 & 0 & 0 \\ u & h & 0 \\ v & 0 & h \end{psmallmatrix}$,
+que pondera automáticamente los residuos sin hiperparámetros adicionales; y
+conservativa $(h,hu,hv)$. El manejo seco-mojado usa una función de Heaviside.
+
+\paragraph{Resultados clave.}
+La forma \emph{primitiva-conservativa} resulta la más fiable; la forma de la
+ecuación afecta de manera significativa la precisión del PINN. Incorporar la
+condición de entropía (conservación de energía) no mejora la precisión y a veces
+desestabiliza el entrenamiento. Los errores van de $\sim$$10^{-4}$\,m en los
+casos estáticos a $\sim$$10^{-2}$\,m en rotura de presa. Al revisar su código
+publicado, esta tesis identificó un error de implementación en la forma
+primitiva (un factor $h$ adicional en el gradiente de presión) que el artículo
+no menciona.
+
+\paragraph{Relación con esta tesis.}
+Fundamenta el estudio de ablación de formas del residuo
+(Sección~\ref{sec:ablation}). A diferencia de esta tesis, Tian resuelve el
+problema \emph{directo} --- la topografía es un dato conocido, no una incógnita
+---, por lo que no forma parte del estudio comparativo de arquitecturas.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Chen et al.\ (2023) --- PINN para batimetría costera}
+\label{sec:lit:chen}
+
+\paragraph{Problema.}
+\cite{chen2023} aplican un PINN al problema \emph{inverso} de mapear la
+batimetría somera costera y reconstruir el campo de oleaje de forma simultánea,
+a partir de observaciones dispersas de las olas. Es, según los autores, la
+primera vez que se aplican PINNs a la inversión de batimetría en aguas someras.
+
+\paragraph{Entrada y salida.}
+Recibe observaciones dispersas del oleaje --- número de onda y/o altura de ola
+y, en una de sus variantes, mediciones escasas de profundidad --- y produce la
+batimetría (profundidad de agua) junto con el campo de oleaje completo.
+
+\paragraph{Datos.}
+Playas con barras (perfiles idealizados) con datos sintéticos del modelo XBeach,
+y un bajo circular con datos \emph{experimentales} de laboratorio (Chawla
+et al., 1996). El ensayo con datos reales de campo se deja como trabajo futuro.
+
+\paragraph{Método.}
+PINN cuya restricción física \emph{no} son las SWE, sino la ecuación de balance
+de energía del oleaje junto con la relación de dispersión (lineal o no lineal).
+Usa redes totalmente conectadas compuestas (una para el campo de energía del
+oleaje, otra para el número de onda y la profundidad), de 4 capas $\times$ 30
+neuronas, activación Tanh, entrenadas con Adam y L-BFGS-B.
+
+\paragraph{Resultados clave.}
+Recupera la batimetría con alta precisión --- RMSE de la profundidad del orden
+de $10^{-2}$\,m y $R^2 > 0{,}98$ en los casos de prueba --- y supera con claridad
+a una red neuronal convencional sin la restricción física. Emplear la relación
+de dispersión \emph{no lineal} es decisivo: con la versión lineal el error de la
+profundidad se degrada en la zona de rompientes.
+
+\paragraph{Relación con esta tesis.}
+Es un PINN de inversión de batimetría en el dominio costero, afín a la
+motivación de monitoreo de esta tesis. Su física (ecuaciones de oleaje) difiere
+de las SWE, por lo que sirve como antecedente del paradigma pero no como
+arquitectura comparable en el estudio de la Sección~\ref{sec:arquitecturas}.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Angel et al.\ (2024) --- Inversión con datos experimentales}
+\label{sec:lit:angel}
+
+\paragraph{Problema.}
+\cite{angel2024} presentan la primera reconstrucción de batimetría a partir de
+datos \emph{experimentales} reales, mediante optimización restringida por EDP
+(ecuaciones en derivadas parciales), no con PINNs.
+
+\paragraph{Entrada y salida.}
+Recibe las series temporales de elevación de la superficie libre registradas por
+sensores puntuales y produce el perfil de batimetría $\zb(x)$.
+
+\paragraph{Datos.}
+Canal de oleaje de 12\,m de longitud, con un bump de 200\,mm en agua de 0,3\,m,
+4 sensores y 20 réplicas experimentales. Código y datos abiertos.
+
+\paragraph{Método.}
+Adjunto continuo de las SWE 1D para el cálculo eficiente del gradiente; SWE
+discretizadas con Dedalus (espectral, $M = 68$ puntos de Chebyshev); descenso de
+gradiente con line search de Armijo.
+
+\paragraph{Resultados clave.}
+NRMSE (RMSE normalizado) de $\approx$14--16\,\% reconstruyendo desde los
+sensores; usar 2 sensores da una reconstrucción casi tan precisa como con 3. La
+posición del máximo de la batimetría se recupera bien, aunque su altura se
+subestima.
+
+\paragraph{Relación con esta tesis.}
+Es el \textbf{baseline clásico de restricción dura} contra el que se compara el
+PINN (Exp.\ 6, Sección~\ref{sec:comp}); su éxito allí donde el PINN de
+penalización blanda falla motiva el diagnóstico blando-vs-duro de este trabajo.
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Liu et al.\ (2024) --- Surrogado CNN para inversión}
+\label{sec:lit:liu}
+
+\paragraph{Problema.}
+\cite{liu2024} adoptan un enfoque en dos etapas: primero entrenan una red que
+\emph{emula} las SWE 2D (un sustituto rápido y diferenciable del solver
+numérico) y luego recuperan la batimetría optimizándola contra ese sustituto.
+
+\paragraph{Entrada y salida.}
+A partir de observaciones de elevación de la superficie del agua produce la
+batimetría $\zb$; el sustituto intermedio emula el mapa directo, de $\zb$ a los
+campos de flujo.
+
+\paragraph{Datos.}
+Unas 3000 simulaciones del solver SRH-2D sobre un canal sintético rectangular
+(25,6\,m $\times$ 6,4\,m) para entrenar el sustituto.
+
+\paragraph{Método.}
+El sustituto es un autoencoder convolucional (CNN, red neuronal convolucional)
+entrenado para predecir los campos de flujo a partir de la batimetría. Una vez
+entrenado, sus pesos se \emph{congelan} y la batimetría pasa a ser la variable a
+optimizar: partiendo de una estimación inicial, se ajusta $\zb$ por descenso de
+gradiente (Adam) para minimizar el desajuste entre la superficie predicha por el
+sustituto y la observada, más regularización de suavidad y de rango. Los
+gradientes respecto de $\zb$ se obtienen por diferenciación automática
+retropropagando a través del sustituto ya entrenado, sin reentrenarlo.
+
+\paragraph{Resultados clave.}
+RMSE de $\zb$ de $\approx$0,09\,m a partir solo de observaciones de elevación de
+superficie (con regularización; el peor caso, sin regularización, llega a
+$\approx$0,21\,m).
+
+\paragraph{Relación con esta tesis.}
+Paradigma alternativo (surrogado diferenciable frente a PINN): rápido en la
+inversión, pero inaplicable sin un gran conjunto de simulaciones previas, a
+diferencia del enfoque PINN, que no requiere datos de simulación.

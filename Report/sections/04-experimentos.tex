@@ -1,0 +1,135 @@
+\section{Experimentos}
+\label{sec:exp}
+
+Este capítulo presenta la evaluación experimental en tres bloques: la
+comparación controlada de las tres arquitecturas
+(Sección~\ref{sec:arch-comp}); seis casos de prueba de complejidad creciente
+---del régimen 1D estacionario a datos reales de laboratorio--- que conforman
+el banco de pruebas (Secciones~\ref{sec:exp1} a~\ref{sec:exp6}); y la ablación
+de la forma del residuo SWE (Sección~\ref{sec:ablation}). Cada caso se
+especifica a continuación; sus resultados se completarán con las corridas del
+estudio comparativo de arquitecturas.
+
+\subsection{Comparación de arquitecturas}
+\label{sec:arch-comp}
+
+Este estudio compara los tres diseños de arquitectura de la
+Sección~\ref{sec:arquitecturas} --- la propuesta de dos redes (A1), la
+monolítica estilo Dazzi (A2) y la de una red por campo estilo Ohara (A3) ---
+mediante un
+\emph{estudio de escalamiento}: cada diseño se instancia a tres presupuestos
+de parámetros (pequeño $\approx$20K, medio $\approx$100K, grande
+$\approx$500K) y se evalúa en tres casos de complejidad creciente --- el bump
+subcrítico 1D estacionario (Exp.~1), la cuenca de Thacker 1D transitoria
+(Exp.~2) y los dos cilindros 2D (Exp.~3) ---, bajo el protocolo de comparación
+justa de la Sección~\ref{sec:protocolo}. El resultado es doble: (i) a
+presupuesto de parámetros igualado, qué diseño recupera mejor la batimetría
+--- comparación que aísla el diseño de la capacidad ---; y (ii) la curva de
+precisión ($\RMSE$, $\NRMSE$, $R^2$ de $\zb$) frente al número de parámetros
+de cada diseño, que sitúa a la propuesta en la frontera precisión-costo. Se
+reporta además el costo de cómputo (tiempo de entrenamiento y VRAM pico). Los
+tres diseños se ordenan por su \emph{grado de separación de redes}: monolítica
+(A2), flujo agrupado con batimetría aparte (A1) y una red por cada campo (A3).
+El objetivo es ubicar a la propuesta en ese eje --- si darle red propia a
+$\zb$ y agrupar el flujo con embedding de Fourier le da ventaja sobre la red
+monolítica y sobre la separación total por campo, y en qué rango de
+presupuestos.
+
+\paragraph{Resultados.}
+\pendiente{tabla del estudio de escalamiento (3 diseños $\times$ 3 presupuestos
+$\times$ 3 casos) y figura de la frontera precisión--parámetros.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 1 --- Bump subcrítico 1D (estacionario)}
+\label{sec:exp1}
+
+\paragraph{Setup.}
+Bump parabólico de 200\,mm en dominio $[-10, 10]$\,m, descarga
+$q = 4.42$\,m$^2$/s, profundidad aguas abajo $h_{\text{down}} = 2.0$\,m,
+sin fricción. Rango de Froude: $[0.50, 0.63]$. Depresión superficial:
+93\,mm. El planteamiento y la solución analítica (ecuación de Bernoulli) se
+detallan en el Apéndice~\ref{app:exp1}.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 2 --- Cuenca de Thacker 1D (transitorio)}
+\label{sec:exp2}
+
+\paragraph{Setup.}
+Cuenca parabólica $\zb = 0.5(x^2 - 1)$ en $[-2, 2]$\,m, profundidad
+central $h_0 = 0.5$\,m, período de oscilación $T = 2.006$\,s.
+Problema cerrado sin condiciones de borde de flujo. El planteamiento y la
+solución analítica de Thacker se detallan en el Apéndice~\ref{app:exp2}.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 3 --- Dos cilindros 2D (transitorio)}
+\label{sec:exp3}
+
+\paragraph{Setup.}
+Dos obstáculos cilíndricos en un dominio 2D; observaciones $\eta$, $u$ y $v$
+sobre una malla $40\times40$ y 15 instantáneas temporales. El planteamiento y
+la solución de referencia numérica se detallan en el Apéndice~\ref{app:exp3}.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 4 --- Topografía variable 2D (Tian dT10)}
+\label{sec:exp4}
+
+\paragraph{Setup.}
+Réplica fiel del caso dinámico \emph{dT10} de Tian et al.\ \cite{tian2025}
+(Sección~3.3): masa de agua sobre topografía oscilatoria 2D que parte de un
+estado desbalanceado ($h(x,y,0) = \zb$) y se relaja bajo gravedad con bordes
+periódicos, sin forzamiento externo. El planteamiento y la solución de
+referencia numérica se detallan en el Apéndice~\ref{app:exp4}.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 5 --- Cuenca cerrada (paraboloide de Thacker)}
+\label{sec:exp5}
+
+\paragraph{Setup.}
+Cuenca cuyo borde emerge sobre el nivel medio (75.5\% del dominio siempre
+seco) y \emph{sin} forzamiento de borde externo. El planteamiento y la
+solución analítica de Thacker 2D se detallan en el Apéndice~\ref{app:exp5}.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Exp.\ 6 --- Datos reales (canal de oleaje de Angel)}
+\label{sec:exp6}
+
+\paragraph{Setup.}
+Datos \emph{reales} del canal de Hamburgo de Angel et al.\ \cite{angel2024},
+ventana de oleaje establecido $t\in[40,60]$\,s; el sensor S1 ($x=1.5$\,m)
+impone la entrada como Dirichlet \emph{soft} (penalización MSE con el
+mismo peso que la observación interior, no es una BC dura --- el método
+adjoint de Angel sí impone la BC dura a través del solver directo, lo
+que parcialmente explica el cierre del gap NRMSE) y S2 ($x=3.5$\,m),
+fuera del bump, es la observación interior; PINN transitorio 1D con
+drag de fondo lineal y $\zb\ge0$.
+
+\paragraph{Resultados.}
+\pendiente{resultados del estudio de arquitecturas.}
+
+% ──────────────────────────────────────────────────────────────
+\subsection{Estudio de ablación: forma de ecuación SWE}
+\label{sec:ablation}
+
+Se comparan las tres formas del residuo SWE (Sección~\ref{sec:method})
+en el caso del bump subcrítico (Exp.\ 1), con la misma arquitectura,
+pesos de pérdida y presupuesto de entrenamiento. Cada forma se entrena
+con semillas aleatorias independientes para evaluar la robustez.
+
+\paragraph{Resultados.}
+\pendiente{tabla comparativa de las tres formas del residuo (RMSE, $R^2$ y
+robustez entre semillas).}
