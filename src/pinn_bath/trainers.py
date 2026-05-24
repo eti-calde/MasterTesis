@@ -127,6 +127,37 @@ class AdamLBFGSTrainer:
             assert self._resumed_state is not None
             restore_state(self._resumed_state, model=self.model, optimizer=None, restore_rng=False)
 
+        # Warn early if the case's bc_type is not actually enforced by
+        # _compute_bc_loss but the caller still set a positive bc weight
+        # — they expect a BC penalty that will silently be 0.
+        self._warn_unenforced_bc()
+
+    def _warn_unenforced_bc(self) -> None:
+        """Emit a warning when ``w.bc > 0`` but the case's ``bc_type`` has
+        no dispatch in :meth:`_compute_bc_loss`.
+
+        Currently enforced bc_types: ``periodic``, ``open_dirichlet``,
+        ``closed`` / ``closed_walls``. All other declared values
+        (``real_sensor``, ``tidal``, ``soft_inlet_outlet``,
+        ``open_uniform``) return a zero BC loss and the ``w.bc``
+        contribution is silently discarded.
+        """
+        import warnings
+
+        if self.cfg.loss.bc == 0.0:
+            return
+        bc_type = self.case.metadata.bc_type
+        enforced = {"periodic", "open_dirichlet", "closed", "closed_walls"}
+        if bc_type not in enforced:
+            warnings.warn(
+                f"AdamLBFGSTrainer: case {self.case.metadata.case_id!r} has "
+                f"bc_type={bc_type!r} which is NOT enforced by "
+                f"_compute_bc_loss. The configured w.bc={self.cfg.loss.bc} "
+                f"weight will multiply a zero loss and have no effect. Set "
+                f"w.bc=0 or use one of {sorted(enforced)}.",
+                stacklevel=2,
+            )
+
     # --- Loss -----------------------------------------------------------
 
     def compute_loss(self) -> tuple[torch.Tensor, dict[str, float]]:
@@ -297,6 +328,11 @@ class AdamLBFGSTrainer:
     def _compute_bc_loss(self, dtype: torch.dtype) -> torch.Tensor:
         """Dispatch a BC penalty for the case's ``bc_type``.
 
+        Skips the entire dispatch (no model evaluation, no tensor
+        construction) when ``w.bc == 0`` — important for cases whose
+        BC loss is a model forward (periodic, wall, flat_bed): in 2D
+        these add ~30-40 % to the step time even when the weight is 0.
+
         Implemented:
 
         - ``periodic`` (Tian dT10) → :func:`pinn_bath.losses.periodic_bc_loss`.
@@ -304,11 +340,16 @@ class AdamLBFGSTrainer:
           :func:`pinn_bath.losses.flat_bed_loss` (``z_b = 0`` outside the
           bump support). If ``h_down`` and ``q`` are in ``constants``, also
           adds :func:`pinn_bath.losses.inflow_outflow_1d_loss`.
-        - ``closed_walls`` (Thacker basin Exps 2 / 5):
+        - ``closed_walls`` / ``closed`` (Thacker basin Exps 2 / 5):
           :func:`pinn_bath.losses.wall_bc_loss`.
 
-        Other types return 0 (the data and PDE terms handle them implicitly).
+        Other types return 0 (the data and PDE terms handle them
+        implicitly). See :meth:`_warn_unenforced_bc` for the init-time
+        warning that fires when an unrecognised ``bc_type`` is paired
+        with ``w.bc > 0``.
         """
+        if self.cfg.loss.bc == 0.0:
+            return torch.zeros((), dtype=dtype, device=self.device)
         bc_type = self.case.metadata.bc_type
         seed = self.cfg.seed + 13_337
         if bc_type == "periodic":

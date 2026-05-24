@@ -98,10 +98,17 @@ class RunDecision:
 class Registry:
     """Decides which runs in a sweep need execution vs. skip vs. resume."""
 
-    def __init__(self, study_dir: Path | str, manifest_path: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        study_dir: Path | str,
+        manifest_path: Path | str | None = None,
+        *,
+        retry_errors: bool = False,
+    ) -> None:
         self.study_dir = Path(study_dir)
         self.study_dir.mkdir(parents=True, exist_ok=True)
         self.manifest = Manifest(manifest_path or self.study_dir / "manifest.jsonl")
+        self.retry_errors = retry_errors
 
     # --- Decision -------------------------------------------------------
 
@@ -125,6 +132,20 @@ class Registry:
                     cfg, rid, rdir, "skip", "diverged previously; needs manual inspection"
                 )
             # "interrupted" or unknown -> fall through to resume/run logic.
+
+        # 1b. Poisoned: previous attempt errored. Don't auto-retry unless
+        # the user opted in with retry_errors=True; otherwise the sweep
+        # would loop forever on a config that always crashes.
+        if not self.retry_errors:
+            last_status = self.manifest.latest_status(rid)
+            if last_status == "error":
+                return RunDecision(
+                    cfg,
+                    rid,
+                    rdir,
+                    "skip",
+                    "previous attempt errored (manifest); pass --retry-errors to retry",
+                )
 
         # 2. Checkpoint present -> resume.
         if last_ckpt.exists():

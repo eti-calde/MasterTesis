@@ -157,6 +157,22 @@ def wilcoxon_pairs(
     Within each (case, budget) cell, group runs by ``axis`` (e.g. arch),
     pair them by ``pair_axis`` (seed), and compare every pair. Returns one
     :class:`PairedComparison` per (a, b) pair.
+
+    .. note::
+       **Statistical power at n=3 seeds.** The current sweep grid uses
+       3 seeds per cell (``arch_scaling.SEEDS``). The two-sided Wilcoxon
+       signed-rank test on n=3 paired observations has a smallest
+       achievable two-sided p-value of ``p ≈ 0.25`` (the test statistic
+       is bounded by the ranks {1, 2, 3}). In other words, **with n=3
+       no result can reach the conventional ``p < 0.05`` threshold**;
+       the test is informative for ranking but not conclusive on its own.
+
+       Report ``effect_size`` (paired Cohen's d) alongside ``p_value``
+       and call out "n=3, underpowered" in the thesis tables. Bumping
+       to n=5 seeds gives a minimum p ≈ 0.0625; n=6 gives p ≈ 0.0313
+       (first n where the conventional threshold is reachable). The
+       canonical 3-seed sweep is kept for budget reasons; promote to
+       n=5+ if a specific claim hinges on the test.
     """
     if _scipy_stats is None:
         raise RuntimeError("scipy is required for wilcoxon_pairs")
@@ -193,6 +209,35 @@ def wilcoxon_pairs(
 
 # --- Formatting ------------------------------------------------------------
 
+# Canonical orderings for axes whose alphabetical sort produces a
+# misleading table. budgets/forms/cases all benefit; archs sort fine
+# alphabetically (A1, A2, A3).
+_AXIS_ORDER: dict[str, list[str]] = {
+    "budget": ["small", "medium", "large"],
+    "form": ["primitive", "prim_cons", "conservative"],
+    "case": ["exp1", "exp2", "exp3", "exp4", "exp5", "exp6"],
+}
+
+
+def _ordered_sort_key(axes: Sequence[str], key: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Sort key that respects :data:`_AXIS_ORDER` for known axes.
+
+    For each axis with a custom ordering, replace the value with its index
+    in the canonical list (unknown values sort last). Other axes fall
+    back to ``repr()``.
+    """
+    out: list[Any] = []
+    for ax, val in zip(axes, key, strict=True):
+        order = _AXIS_ORDER.get(ax)
+        if order is not None:
+            try:
+                out.append(order.index(val))
+            except ValueError:
+                out.append(len(order))  # unknowns last
+        else:
+            out.append(repr(val))
+    return tuple(out)
+
 
 def format_text_table(
     rows: Sequence[dict[str, Any]],
@@ -205,7 +250,7 @@ def format_text_table(
     groups = group_by(rows, axes)
     header: list[str] = [*axes, "n", "mean", "std", "CI95"]
     out_rows: list[list[str]] = [header]
-    for key, cell_rows in sorted(groups.items(), key=lambda kv: tuple(map(repr, kv[0]))):
+    for key, cell_rows in sorted(groups.items(), key=lambda kv: _ordered_sort_key(axes, kv[0])):
         agg = aggregate_cell(cell_rows, metric_key)
         out_rows.append(
             [
@@ -244,7 +289,7 @@ def emit_latex_table(
         " & ".join([*axes, r"mean", r"std"]) + r" \\",
         r"\midrule",
     ]
-    for key, cell_rows in sorted(groups.items(), key=lambda kv: tuple(map(repr, kv[0]))):
+    for key, cell_rows in sorted(groups.items(), key=lambda kv: _ordered_sort_key(axes, kv[0])):
         agg = aggregate_cell(cell_rows, metric_key)
         lines.append(
             " & ".join([*map(str, key), fmt.format(agg.mean), fmt.format(agg.std)]) + r" \\"

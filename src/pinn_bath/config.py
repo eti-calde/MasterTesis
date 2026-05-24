@@ -20,6 +20,11 @@ Budget = Literal["small", "medium", "large"]
 Form = Literal["primitive", "prim_cons", "conservative"]
 Observation = Literal["eta", "u", "v"]
 
+# Bump when a default OR the run_id hashing recipe changes such that
+# previously-generated run_ids should be invalidated. Stored in
+# summary.json so loaders can detect stale runs.
+SCHEMA_VERSION: int = 2  # v1: pre-M7; v2: data_v added, tv default 0
+
 
 class LossWeights(BaseModel):
     """Weights for the composite PINN loss.
@@ -96,8 +101,32 @@ class RunConfig(BaseModel):
 
     @property
     def run_id(self) -> str:
-        """Deterministic 12-char hash of the canonical config (S14)."""
-        payload = self.model_dump(mode="json")
+        """Deterministic 12-char hash of the scientific config (S14).
+
+        Hashes only the fields whose change should invalidate a prior
+        run (the "scientific subset"): case / arch / budget / form /
+        seed / loss weights / optimiser / observations / noise. Internal
+        bookkeeping (e.g., ``checkpoint`` settings, ``deterministic``,
+        ``case_path`` file location) is excluded so that moving the
+        ``.npz`` or changing the checkpoint cadence does not invalidate
+        cached runs.
+
+        ``SCHEMA_VERSION`` is mixed into the hash so any future change
+        to this recipe forces a clean re-run of the registry.
+        """
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "case": self.case,
+            "arch": self.arch,
+            "budget": self.budget,
+            "form": self.form,
+            "seed": self.seed,
+            "loss": self.loss.model_dump(),
+            "optimizer": self.optimizer.model_dump(),
+            "observations": list(self.data.observations),
+            "n_obs_points": self.data.n_obs_points,
+            "obs_noise_std": self.data.obs_noise_std,
+        }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 

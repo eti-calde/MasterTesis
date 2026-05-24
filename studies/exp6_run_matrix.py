@@ -119,9 +119,21 @@ def run_study(
             )
             counts[result.get("status", "ok")] = counts.get(result.get("status", "ok"), 0) + 1
         except Exception as e:
+            # Log + continue so one failing config doesn't kill the whole
+            # multi-hour sweep. The error is recorded in the registry; the
+            # final counts dict carries an "error" tally for the CLI to
+            # report. Re-run with --retry-errors to retry these.
+            import traceback
+
             reg.mark_finished(d.cfg, status="error", error=repr(e))
             counts["error"] += 1
-            raise
+            print(f"  ERROR run_id={d.cfg.run_id}: {e!r}", flush=True)
+            traceback.print_exc()
+    if counts["error"]:
+        print(
+            f"[sweep finished with {counts['error']} errors; see registry]",
+            flush=True,
+        )
     return counts
 
 

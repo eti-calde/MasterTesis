@@ -19,7 +19,9 @@ from studies._runner import run_one
 @pytest.mark.fast
 def test_arch_scaling_grid_size_full() -> None:
     grid = arch_scaling.build_grid()
-    assert len(grid) == 3 * 3 * 3 * 3  # 3 cases x 3 archs x 3 budgets x 3 seeds
+    # Default: 4 cases (exp1, exp2, exp3, exp5) x 3 archs x 3 budgets x 3 seeds.
+    # Exp 5 was added to the default cases tuple in batch M8.4.
+    assert len(grid) == 4 * 3 * 3 * 3
 
 
 @pytest.mark.fast

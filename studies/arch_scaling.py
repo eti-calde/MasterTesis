@@ -84,7 +84,7 @@ def _case_loss_weights(case: str) -> LossWeights:
 
 def build_grid(
     *,
-    cases: tuple[str, ...] = ("exp1", "exp2", "exp3"),
+    cases: tuple[str, ...] = ("exp1", "exp2", "exp3", "exp5"),
     archs: tuple[str, ...] = ARCHS,
     budgets: tuple[str, ...] = BUDGETS,
     seeds: tuple[int, ...] = SEEDS,
@@ -164,9 +164,21 @@ def run_study(
             )
             counts[result.get("status", "ok")] = counts.get(result.get("status", "ok"), 0) + 1
         except Exception as e:
+            # Log + continue so one failing config doesn't kill the whole
+            # multi-hour sweep. The error is recorded in the registry; the
+            # final counts dict carries an "error" tally for the CLI to
+            # report. Re-run with --retry-errors to retry these.
+            import traceback
+
             reg.mark_finished(d.cfg, status="error", error=repr(e))
             counts["error"] += 1
-            raise
+            print(f"  ERROR run_id={d.cfg.run_id}: {e!r}", flush=True)
+            traceback.print_exc()
+    if counts["error"]:
+        print(
+            f"[sweep finished with {counts['error']} errors; see registry]",
+            flush=True,
+        )
     return counts
 
 
@@ -175,8 +187,19 @@ def main() -> None:
     parser.add_argument("--study-dir", type=Path, default=Path("runs/arch_scaling"))
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--cases",
+        type=str,
+        default="exp1,exp2,exp3,exp5",
+        help=(
+            "Comma-separated case ids to include (default: exp1,exp2,exp3,exp5). "
+            f"Available: {','.join(sorted(CASE_PATHS))}."
+        ),
+    )
     args = parser.parse_args()
-    run_study(args.study_dir, device=args.device, dry_run=args.dry_run)
+    cases = tuple(c.strip() for c in args.cases.split(",") if c.strip())
+    grid = build_grid(cases=cases)
+    run_study(args.study_dir, grid=grid, device=args.device, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

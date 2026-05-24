@@ -77,6 +77,9 @@ class RunRecorder:
         if torch.cuda.is_available():
             summary["peak_vram_mb"] = int(torch.cuda.max_memory_allocated() // (1024 * 1024))
         if self.cfg is not None:
+            from pinn_bath.config import SCHEMA_VERSION
+
+            summary["schema_version"] = SCHEMA_VERSION
             summary["run_id"] = self.cfg.run_id
             summary["case"] = self.cfg.case
             summary["arch"] = self.cfg.arch
