@@ -77,6 +77,8 @@ class AdamLBFGSTrainer:
         n_bc: int = 200,
         eval_log_every: int = 50,
         heartbeat_every_s: float = 60.0,
+        obs_coords: dict[str, torch.Tensor] | None = None,
+        obs_values: dict[str, torch.Tensor] | None = None,
     ) -> None:
         self.cfg = cfg
         self.case = case
@@ -88,19 +90,23 @@ class AdamLBFGSTrainer:
         self.heartbeat_every_s = heartbeat_every_s
         self.n_bc = int(n_bc)
 
-        n_obs = n_observations if n_observations is not None else (cfg.data.n_obs_points or 200)
-        obs = case.sample_observations(
-            seed=cfg.seed,
-            n_obs=n_obs,
-            fields=tuple(cfg.data.observations),
-            noise_std=cfg.data.obs_noise_std,
-        )
-        self.obs_coords: dict[str, torch.Tensor] = {
-            axis: obs[axis].to(self.device) for axis in ("x", "y", "t") if axis in obs
-        }
-        self.obs_values: dict[str, torch.Tensor] = {
-            f: obs[f].to(self.device) for f in cfg.data.observations
-        }
+        if obs_coords is not None and obs_values is not None:
+            # Explicit override: caller has pre-sampled observations (e.g.,
+            # Exp 6 with fixed sensor positions). Bypass random sampling.
+            self.obs_coords = {axis: t.to(self.device) for axis, t in obs_coords.items()}
+            self.obs_values = {f: t.to(self.device) for f, t in obs_values.items()}
+        else:
+            n_obs = n_observations if n_observations is not None else (cfg.data.n_obs_points or 200)
+            obs = case.sample_observations(
+                seed=cfg.seed,
+                n_obs=n_obs,
+                fields=tuple(cfg.data.observations),
+                noise_std=cfg.data.obs_noise_std,
+            )
+            self.obs_coords = {
+                axis: obs[axis].to(self.device) for axis in ("x", "y", "t") if axis in obs
+            }
+            self.obs_values = {f: obs[f].to(self.device) for f in cfg.data.observations}
 
         coll = case.sample_collocation(
             seed=cfg.seed + 7919,
@@ -263,7 +269,7 @@ class AdamLBFGSTrainer:
                     self.model, self.case, device=self.device, dtype=dtype
                 )
             return loss
-        if bc_type == "closed_walls":
+        if bc_type in ("closed", "closed_walls"):
             return wall_bc_loss(
                 self.model,
                 self.case,

@@ -37,9 +37,20 @@ def run_one(
     n_bc: int = 200,
     eval_log_every: int = 50,
     double_precision: bool = True,
+    case: Case | None = None,
+    obs_coords: dict | None = None,
+    obs_values: dict | None = None,
 ) -> dict[str, Any]:
-    """Execute one run end-to-end and return the trainer's result dict."""
-    case = Case.load(cfg.data.case_path)
+    """Execute one run end-to-end and return the trainer's result dict.
+
+    Pass ``case`` to bypass ``Case.load(cfg.data.case_path)`` (e.g.,
+    when the case is built programmatically — Exp 6 with the Angel
+    adapter). Pass ``obs_coords`` + ``obs_values`` to override the
+    trainer's random observation sampler with explicit sparse obs
+    (Exp 6 sensor positions).
+    """
+    if case is None:
+        case = Case.load(cfg.data.case_path)
     set_seed(cfg.seed, deterministic=cfg.deterministic)
 
     model = build(
@@ -71,5 +82,7 @@ def run_one(
             n_observations=n_observations,
             n_bc=n_bc,
             eval_log_every=eval_log_every,
+            obs_coords=obs_coords,
+            obs_values=obs_values,
         )
         return trainer.train()

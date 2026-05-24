@@ -27,6 +27,11 @@ CASE_PATHS: dict[str, str] = {
     "exp1": "Experiments/01-subcritical-bump-1d/data/ground_truth_dazzi_B1.npz",
     "exp2": "Experiments/02-thacker-basin-1d/data/ground_truth_thacker_T1.npz",
     "exp3": "Experiments/03-two-cylinders-2d/data/ground_truth_cylinders.npz",
+    "exp5": "Experiments/05-thacker-paraboloid-3d/data/ground_truth_thacker3d.npz",
+    # Exp 4 uses pinn_bath directly with a periodic case (separate study).
+    # Exp 6 (Angel) is built programmatically via pinn_bath.datasets — not a
+    # standalone .npz; the study script passes a constructed Case to
+    # run_one(...).
 }
 
 ARCHS: tuple[str, ...] = ("A1", "A2", "A3")
@@ -50,6 +55,12 @@ def _case_loss_weights(case: str) -> LossWeights:
         return LossWeights(data=10.0, pde=1.0, pos=10.0, ic=100.0, bc=10.0, tv=1.0e-4)
     if case == "exp3":
         return LossWeights(data=10.0, data_u=5.0, pde=1.0, pos=10.0, ic=100.0, tv=1.0e-5)
+    if case == "exp5":
+        return LossWeights(data=10.0, data_u=5.0, pde=1.0, pos=10.0, ic=500.0, bc=10.0, tv=1.0e-5)
+    if case == "exp6":
+        # Angel real-data: no IC (window starts mid-experiment), no BC
+        # explicitly (inlet S1 is a soft observation, outlet is open).
+        return LossWeights(data=10.0, pde=1.0, pos=10.0, tv=1.0e-4)
     # Default: just data + pde + pos.
     return LossWeights(data=10.0, pde=1.0, pos=10.0)
 
