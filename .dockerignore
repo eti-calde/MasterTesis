@@ -1,0 +1,63 @@
+# Files that should NOT be copied into the docker build context.
+# Mirrors .gitignore where it matters for image size + cache invalidation.
+
+# Python / venv
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Sweep outputs (rebuilt inside the container)
+runs/
+
+# Reference data NOT needed for Exp 1-5 inside the image (Angel processed
+# IS tracked and small — kept in the image so Exp 6 works out-of-box).
+Experiments/datasets/tian2025/
+Experiments/datasets/liu2024_sacramento/
+Experiments/datasets/dazzi2024/
+Experiments/datasets/angel2024/raw/
+
+# Personal Obsidian vault (huge, gitignored anyway)
+Notes/
+
+# Cloned reference repos
+Experiments/01-subcritical-bump-1d/reference_dazzi2024/
+
+# Test fixtures + caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+.coverage
+htmlcov/
+
+# Git + IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# LaTeX build artefacts
+Report/main.pdf
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Slides (separate workflow)
+Slides/node_modules/

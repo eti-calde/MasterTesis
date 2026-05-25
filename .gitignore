@@ -44,8 +44,14 @@ runs/
 # Checkpoints
 Experiments/**/checkpoints/
 
-# External benchmark datasets (~1.4 GB; see README to fetch from upstream)
-Experiments/datasets/
+# External benchmark datasets (~1.4 GB raw; see README to fetch from upstream).
+# Exception: the small Angel processed .npz (~9 MB total) IS tracked so
+# anyone cloning the repo can run Exp 6 without extra downloads.
+# git can't re-include inside an ignored dir; we ignore level-by-level.
+Experiments/datasets/*
+!Experiments/datasets/angel2024
+Experiments/datasets/angel2024/*
+!Experiments/datasets/angel2024/processed
 
 # Cloned reference repos (kept out of main repo; clone separately if needed)
 Experiments/01-subcritical-bump-1d/reference_dazzi2024/

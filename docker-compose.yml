@@ -1,0 +1,40 @@
+# docker-compose for pinn-bath. Provides GPU passthrough and bind-mounts
+# the code + runs/ dir so output persists across container restarts.
+#
+# Quick start:
+#   docker compose build              # one-time, ~5-10 min
+#   docker compose run --rm pinn      # interactive bash inside the container
+#
+# One-shot sweeps:
+#   docker compose run --rm pinn python -m studies.arch_scaling --device cuda
+#
+# Linux: requires nvidia-container-toolkit installed on the host.
+# Windows: Docker Desktop + WSL2 + recent NVIDIA driver (>= 535).
+
+services:
+  pinn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pinn-bath:latest
+    # GPU passthrough. Compose v2 style (works on Docker 20.10+).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Bind-mount the repo so code edits on the host take effect immediately
+    # without a rebuild. runs/ is bind-mounted so sweep output persists.
+    volumes:
+      - .:/workspace
+      - ./runs:/workspace/runs
+    working_dir: /workspace
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONUNBUFFERED=1
+    # Interactive by default; override on the CLI to run a specific sweep.
+    stdin_open: true
+    tty: true
+    command: /bin/bash

@@ -26,9 +26,25 @@ MasterTesis/
 
 ## Setup
 
+### Docker (recomendado para reproducir desde cero)
+
+Full instructions in [`docs/DOCKER.md`](docs/DOCKER.md) (Linux + Windows/WSL2):
+
+```bash
+docker compose build
+docker compose run --rm pinn bash scripts/regenerate_datasets.sh
+docker compose run --rm pinn pytest -m fast        # ~260 verdes en ~10s
+docker compose run --rm pinn bash scripts/run_local_tonight.sh
+```
+
+Requiere Docker + NVIDIA Container Toolkit (Linux) o Docker Desktop con WSL2 (Windows).
+
+### Native (uv)
+
 ```bash
 uv venv --python 3.13
 source .venv/bin/activate
 uv pip install -e ".[dev]"
+bash scripts/regenerate_datasets.sh
 pytest -m fast
 ```
