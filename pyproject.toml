@@ -8,7 +8,9 @@ authors = [{ name = "Etienne Calderon", email = "etienne.rojas@usm.cl" }]
 license = { text = "MIT" }
 
 dependencies = [
-  "torch==2.6.0",
+  # PyTorch >= 2.7 needed for sm_120 (RTX 50-series Blackwell) support;
+  # we install the cu128 wheels via the [tool.uv.sources] override below.
+  "torch>=2.7,<3",
   "numpy==2.4.4",
   "matplotlib==3.10.8",
   "scipy>=1.13,<2",
@@ -24,6 +26,17 @@ dev = [
   "pyright>=1.1",
   "hypothesis>=6,<7",
 ]
+
+# Pull torch from PyTorch's cu128 index (Blackwell sm_120 kernels). The
+# default PyPI wheel ships only up to sm_90 and crashes on RTX 5090 with
+# "no kernel image is available for execution on the device".
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]

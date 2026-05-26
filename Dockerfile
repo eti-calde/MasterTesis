@@ -6,10 +6,11 @@
 # Run:      docker run --rm -it --gpus all -v "$PWD:/workspace" pinn-bath bash
 # Compose:  docker compose run --rm pinn
 
-# CUDA 12.4 runtime image. "runtime" = nvidia driver libs + CUDA libs, no
-# devel toolchain (we don't compile CUDA kernels — PyTorch ships its own).
-# Ubuntu 22.04 (24.04 isn't yet published for CUDA 12.4 in NVIDIA's registry).
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# CUDA 12.8 runtime image — required for RTX 50-series (Blackwell, sm_120)
+# native kernels in PyTorch >=2.7. Older 4060/3090/A100 hosts also work
+# (forward-compat). "runtime" = nvidia driver libs + CUDA libs, no devel
+# toolchain (we don't compile CUDA kernels — PyTorch ships its own).
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
 
 # Non-interactive apt + UTF-8 locale.
 ENV DEBIAN_FRONTEND=noninteractive \
