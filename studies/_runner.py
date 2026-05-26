@@ -60,6 +60,7 @@ def run_one(
         has_t=case.metadata.has_t,
         output_fields=_output_fields(case),
         ff_seed=cfg.seed,
+        h_floor=cfg.h_floor,
     )
     if double_precision:
         model = model.double()

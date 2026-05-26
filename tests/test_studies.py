@@ -33,7 +33,7 @@ def test_arch_scaling_grid_run_ids_are_unique() -> None:
 @pytest.mark.fast
 def test_ablation_forms_grid_size() -> None:
     grid = ablation_forms.build_grid()
-    assert len(grid) == 3 * 3  # 3 forms x 3 seeds
+    assert len(grid) == 3 * 3 * 2  # 3 forms x 3 seeds x 2 h_floor variants
 
 
 @pytest.mark.fast

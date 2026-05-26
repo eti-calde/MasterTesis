@@ -25,11 +25,13 @@ class A3PerField(BaseModel):
         depth: int,
         width: int,
         activation: type[nn.Module] = nn.Tanh,
+        h_floor: float = 0.0,
     ) -> None:
         super().__init__()
         self.spatial_dim = spatial_dim
         self.has_t = has_t
         self.output_fields = tuple(output_fields)
+        self.h_floor = float(h_floor)
         if "h" not in self.output_fields:
             raise ValueError("A3 requires 'h' in output_fields.")
 
@@ -48,5 +50,5 @@ class A3PerField(BaseModel):
         for field, axes in self._axes_per_field.items():
             net: MLP = getattr(self, f"net_{field}")
             raw = net(stack_coords(coords, axes))
-            out[field] = softplus_positive(raw) if field == "h" else raw
+            out[field] = softplus_positive(raw, floor=self.h_floor) if field == "h" else raw
         return out

@@ -86,6 +86,7 @@ class RunRecorder:
             summary["budget"] = self.cfg.budget
             summary["form"] = self.cfg.form
             summary["seed"] = self.cfg.seed
+            summary["h_floor"] = self.cfg.h_floor
         _atomic_write_json(self._summary_path, summary, indent=2, sort_keys=True)
 
     def close(self) -> None:

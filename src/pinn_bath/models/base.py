@@ -90,6 +90,13 @@ __all__ = [
 ]
 
 
-def softplus_positive(raw: torch.Tensor) -> torch.Tensor:
-    """Strictly positive activation for water depth ``h``."""
-    return nn.functional.softplus(raw)
+def softplus_positive(raw: torch.Tensor, floor: float = 0.0) -> torch.Tensor:
+    """Strictly positive activation for water depth ``h``.
+
+    With ``floor=0.0`` (default) returns plain ``softplus(raw)`` (>0 but
+    can be arbitrarily small). Setting ``floor>0`` guarantees ``h >=
+    floor`` structurally, preventing the conservative SWE residual from
+    collapsing to the trivial ``h -> 0`` solution at the architecture
+    level.
+    """
+    return nn.functional.softplus(raw) + floor

@@ -84,9 +84,15 @@ def tikhonov(values: torch.Tensor) -> torch.Tensor:
     return torch.mean(values**2)
 
 
-def positivity(h: torch.Tensor) -> torch.Tensor:
-    """Penalty for negative depths: mean of :math:`\\max(0, -h)^2`."""
-    return torch.mean(torch.relu(-h) ** 2)
+def positivity(h: torch.Tensor, eps: float = 0.0) -> torch.Tensor:
+    """Penalty for shallow depths: mean of :math:`\\max(0, \\epsilon - h)^2`.
+
+    With ``eps=0.0`` (default) this collapses to ``mean(relu(-h)^2)``, which is
+    a no-op when ``h`` is produced by ``softplus`` (always >0). Setting
+    ``eps>0`` makes the penalty active in the [0, eps] interval, preventing
+    the conservative SWE residual from finding the trivial ``h -> 0`` minimum.
+    """
+    return torch.mean(torch.relu(eps - h) ** 2)
 
 
 def discharge(h: torch.Tensor, u: torch.Tensor, q_target: float) -> torch.Tensor:

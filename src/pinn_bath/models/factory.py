@@ -75,6 +75,7 @@ def build(
     has_t: bool,
     output_fields: tuple[Field, ...],
     ff_seed: int | None = None,
+    h_floor: float = 0.0,
 ) -> BaseModel:
     """Instantiate ``arch`` at ``budget`` for the given case.
 
@@ -96,7 +97,12 @@ def build(
     if (arch, budget) not in _SHAPES:
         raise ValueError(f"Unknown (arch, budget) pair: {arch!r}, {budget!r}")
     shape = _SHAPES[(arch, budget)]
-    common = dict(spatial_dim=spatial_dim, has_t=has_t, output_fields=tuple(output_fields))
+    common = dict(
+        spatial_dim=spatial_dim,
+        has_t=has_t,
+        output_fields=tuple(output_fields),
+        h_floor=h_floor,
+    )
     if arch == "A1":
         return A1TwoNets(**common, ff_seed=ff_seed, **shape)
     if arch == "A2":

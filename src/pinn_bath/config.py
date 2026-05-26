@@ -44,6 +44,7 @@ class LossWeights(BaseModel):
     ic: float = 0.0
     bc: float = 0.0
     pos: float = 1.0
+    pos_eps: float = 0.0  # if >0, positivity penalises h<pos_eps (not just h<0)
     tv: float = 0.0
     tikh: float = 0.0
     dry: float = 0.0
@@ -94,6 +95,7 @@ class RunConfig(BaseModel):
     form: Form = "primitive"
     seed: int = 0
     deterministic: bool = True
+    h_floor: float = 0.0  # if >0, model output enforces h >= h_floor structurally
     loss: LossWeights = Field(default_factory=LossWeights)
     optimizer: OptimizerCfg = Field(default_factory=OptimizerCfg)
     checkpoint: CheckpointCfg = Field(default_factory=CheckpointCfg)
@@ -114,6 +116,12 @@ class RunConfig(BaseModel):
         ``SCHEMA_VERSION`` is mixed into the hash so any future change
         to this recipe forces a clean re-run of the registry.
         """
+        loss_dump = self.loss.model_dump()
+        # Backward-compat: exclude post-M9 fields when at default 0.0 so
+        # pre-existing run_id hashes remain valid. Anyone setting these to
+        # non-zero (the "fix" experiments) gets a new run_id naturally.
+        if loss_dump.get("pos_eps", 0.0) == 0.0:
+            loss_dump.pop("pos_eps", None)
         payload = {
             "schema_version": SCHEMA_VERSION,
             "case": self.case,
@@ -121,12 +129,14 @@ class RunConfig(BaseModel):
             "budget": self.budget,
             "form": self.form,
             "seed": self.seed,
-            "loss": self.loss.model_dump(),
+            "loss": loss_dump,
             "optimizer": self.optimizer.model_dump(),
             "observations": list(self.data.observations),
             "n_obs_points": self.data.n_obs_points,
             "obs_noise_std": self.data.obs_noise_std,
         }
+        if self.h_floor != 0.0:
+            payload["h_floor"] = self.h_floor
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 

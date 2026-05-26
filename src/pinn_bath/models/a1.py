@@ -31,11 +31,13 @@ class A1TwoNets(BaseModel):
         ff_sigma: float = 2.0,
         ff_seed: int | None = None,
         activation: type[nn.Module] = nn.Tanh,
+        h_floor: float = 0.0,
     ) -> None:
         super().__init__()
         self.spatial_dim = spatial_dim
         self.has_t = has_t
         self.output_fields = tuple(output_fields)
+        self.h_floor = float(h_floor)
 
         sol_axes = self.all_coords(spatial_dim, has_t)
         self.sol_ff = PerAxisFourier(sol_axes, ff_n, ff_sigma, seed_base=ff_seed)
@@ -58,7 +60,7 @@ class A1TwoNets(BaseModel):
         out: dict[str, torch.Tensor] = {}
         for i, field in enumerate(self._flow_field_order):
             col = sol_out[:, i : i + 1]
-            out[field] = softplus_positive(col) if field == "h" else col
+            out[field] = softplus_positive(col, floor=self.h_floor) if field == "h" else col
         if "zb" in self.output_fields:
             bath_feat = self.bath_ff(coords)
             out["zb"] = self.bath_net(bath_feat)

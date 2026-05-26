@@ -211,7 +211,7 @@ class AdamLBFGSTrainer:
             wet = torch.sigmoid((out_coll["h"].detach() - eps_wet) / wet_scale)
             residuals = {k: v * wet for k, v in residuals.items()}
         L_pde = pde_mse(residuals)
-        L_pos = positivity(out_coll["h"])
+        L_pos = positivity(out_coll["h"], eps=w.pos_eps)
         L_tikh = tikhonov(out_coll["zb"])
         L_bc = self._compute_bc_loss(dtype)
         L_ic = self._compute_ic_loss(dtype)

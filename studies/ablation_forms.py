@@ -1,8 +1,13 @@
 """§5.4 ablation: three forms of the SWE residual on Exp 1.
 
-Sweep ``{primitive, prim_cons, conservative} x {3 seeds}`` = 9 runs, all on
-Exp 1 with the A1 small configuration (so the comparison isolates the
-residual form, holding architecture and budget constant).
+Sweep ``{primitive, prim_cons, conservative} x {3 seeds} x {h_floor=0, 0.05}``
+= 18 runs, all on Exp 1 with the A1 small configuration (so the comparison
+isolates the residual form, holding architecture and budget constant).
+
+The ``h_floor`` axis activates the structural fix introduced in M10: with
+``h_floor=0.0`` the model output is ``h = softplus(raw)`` (can collapse
+to ~0); with ``h_floor>0`` it is ``h = softplus(raw) + h_floor`` so the
+conservative SWE residual can't trivially satisfy ``h -> 0``.
 """
 
 from __future__ import annotations
@@ -17,11 +22,13 @@ from studies.arch_scaling import CASE_PATHS
 
 FORMS: tuple[str, ...] = ("primitive", "prim_cons", "conservative")
 SEEDS: tuple[int, ...] = (0, 1, 2)
+H_FLOORS: tuple[float, ...] = (0.0, 0.05)  # "without/with fix" comparison
 
 
 def build_grid(
     *,
     seeds: tuple[int, ...] = SEEDS,
+    h_floors: tuple[float, ...] = H_FLOORS,
     adam_epochs: int = 12_000,
     lbfgs_steps: int = 600,
     arch: str = "A1",
@@ -30,21 +37,23 @@ def build_grid(
     grid: list[RunConfig] = []
     for form in FORMS:
         for seed in seeds:
-            grid.append(
-                RunConfig(
-                    case="exp1",
-                    arch=arch,  # type: ignore[arg-type]
-                    budget=budget,  # type: ignore[arg-type]
-                    form=form,  # type: ignore[arg-type]
-                    seed=seed,
-                    optimizer=OptimizerCfg(
-                        adam_epochs=adam_epochs,
-                        lbfgs_steps=lbfgs_steps,
-                    ),
-                    checkpoint=CheckpointCfg(every_epochs=1000, keep_last_k=2),
-                    data=DataCfg(case_path=CASE_PATHS["exp1"], observations=["eta"]),
+            for h_floor in h_floors:
+                grid.append(
+                    RunConfig(
+                        case="exp1",
+                        arch=arch,  # type: ignore[arg-type]
+                        budget=budget,  # type: ignore[arg-type]
+                        form=form,  # type: ignore[arg-type]
+                        seed=seed,
+                        h_floor=h_floor,
+                        optimizer=OptimizerCfg(
+                            adam_epochs=adam_epochs,
+                            lbfgs_steps=lbfgs_steps,
+                        ),
+                        checkpoint=CheckpointCfg(every_epochs=1000, keep_last_k=2),
+                        data=DataCfg(case_path=CASE_PATHS["exp1"], observations=["eta"]),
+                    )
                 )
-            )
     return grid
 
 

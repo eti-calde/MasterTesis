@@ -47,6 +47,7 @@ def collect(study_dir: Path | str) -> list[dict[str, Any]]:
             "budget": data.get("budget"),
             "form": data.get("form"),
             "seed": data.get("seed"),
+            "h_floor": data.get("h_floor", 0.0),
             "status": data.get("status"),
             "wall_time_s": data.get("wall_time_s"),
             "adam_time_s": data.get("adam_time_s"),
