@@ -1,0 +1,16 @@
+# Force LF on shell + Python scripts even when checked out on Windows.
+# Without this, git's autocrlf setting on Windows hosts mangles bash
+# scripts (CRLF makes the shebang and `set` lines fail with $'\r' errors).
+*.sh        text eol=lf
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+
+# Binary blobs — never touch.
+*.npz       binary
+*.npy       binary
+*.png       binary
+*.jpg       binary
+*.pdf       binary
+*.tar.gz    binary
