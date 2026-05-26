@@ -102,7 +102,24 @@ shipped in the repo under `Experiments/datasets/angel2024/processed/`.
 
 ---
 
-## Run the sweeps
+## Run everything in one command
+
+For an unattended run that does dataset regen + all 7 sweeps + packages
+the results into `runs.tar.gz`:
+
+```bash
+docker compose run --rm pinn bash scripts/run_all.sh
+```
+
+Wall-time on an RTX 4060: ~6 hours. Resumable — re-running picks up where
+the last attempt left off. On a 4 GB GPU (e.g. GTX 1650) set `HEAVY=0`
+to skip the three 2D sweeps that need more VRAM:
+`docker compose run --rm pinn bash -c 'HEAVY=0 bash scripts/run_all.sh'`.
+
+The steps below are the manual breakdown if you want to run sweeps one
+at a time.
+
+## Run the sweeps (manual)
 
 ### Fast smoke before everything
 
