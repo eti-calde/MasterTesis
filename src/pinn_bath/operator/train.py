@@ -123,7 +123,7 @@ def train_operator(
             if lambda_phys > 0:
                 lp, parts = physics_loss(eta, u, norm.denorm_zb(zb_pred_n), dx, dt)
                 loss = mse + lambda_phys * lp
-                phys_val, cont, mom = float(lp), parts["cont"], parts["mom"]
+                phys_val, cont, mom = float(lp.detach()), parts["cont"], parts["mom"]
             opt.zero_grad()
             loss.backward()
             gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1e9)
