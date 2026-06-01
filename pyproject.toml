@@ -26,6 +26,12 @@ dev = [
   "pyright>=1.1",
   "hypothesis>=6,<7",
 ]
+# Forward 1D SWE solver for generating the inverse-operator dataset
+# (pinn_bath.solver). Optional: needed only to *generate* data (needs a
+# Fortran toolchain, e.g. `apt install gfortran`), not to train the operator.
+datagen = [
+  "clawpack>=5.12",
+]
 
 # Pull torch from PyTorch's cu128 index (Blackwell sm_120 kernels). The
 # default PyPI wheel ships only up to sm_90 and crashes on RTX 5090 with
