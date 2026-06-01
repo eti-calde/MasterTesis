@@ -95,6 +95,9 @@ def train_operator(
     norm, dx, dt = loaders["normalizer"], loaders["dx"], loaders["dt"]
     model = build_operator(arch, size=size).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
+    # Cosine decay to ~1% of lr by the final epoch — damps the late-training
+    # oscillation seen with a flat lr (val bouncing once near convergence).
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs, eta_min=lr * 1e-2)
 
     out_dir = Path(out_dir) if out_dir else None
     if out_dir:
@@ -125,8 +128,8 @@ def train_operator(
             loss.backward()
             gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1e9)
             opt.step()
-            ep_loss += float(loss)
-            ep_mse += float(mse)
+            ep_loss += float(loss.detach())
+            ep_mse += float(mse.detach())
             ep_phys += phys_val
             ep_cont += cont
             ep_mom += mom
@@ -168,6 +171,7 @@ def train_operator(
                 f"OOD={row['test_rmse_ood']:.4f}",
                 flush=True,
             )
+        sched.step()
 
     if best_state is not None:
         model.load_state_dict(best_state)
