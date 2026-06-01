@@ -89,11 +89,20 @@ def physics_loss(
     g: float = DEFAULT_G,
     dry_tol: float = 1e-3,
     w_cont: float = 1.0,
-    w_mom: float = 1.0,
+    w_mom: float = 0.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Wet-masked mean-squared SWE residual (continuity + momentum).
 
     Returns the scalar loss and a detached dict ``{"cont", "mom"}`` for logging.
+
+    Default ``w_mom=0``: the conservative momentum residual is dominated by the
+    noisy ``∂x(½ g h²)`` flux term and barely depends on ``zb`` (a flat-vs-true
+    ``zb`` changes it only ~2%), so as a soft regularizer it injects mostly
+    finite-difference noise and drowns the continuity term's informative signal
+    (~14% flat-vs-true). Continuity ``∂t h + ∂x(h u)`` depends on ``zb`` directly
+    via ``h = η - zb`` and is the term that carries learnable gradient — so the
+    physics regularizer uses it alone by default. Set ``w_mom>0`` to re-include
+    momentum.
     """
     r_c, r_m, wet = swe_residual_grid(eta, u, zb, dx, dt, g=g, dry_tol=dry_tol)
     wetf = wet.to(r_c.dtype)
