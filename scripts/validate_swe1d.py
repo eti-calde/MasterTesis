@@ -100,15 +100,59 @@ def validate_lake_at_rest() -> float:
     return max_spurious_u
 
 
+def validate_incident_inflow() -> float:
+    """Characteristic inflow BC (incident-wave regime): the custom inflow must
+    be (near) non-reflecting.
+
+    An interior Gaussian pulse splits in two; with a *zero-forcing* custom
+    inflow on the left and a transmissive outflow on the right, the left-going
+    half must leave through the inflow just like a plain ``extrap`` edge. We
+    report the reflection proxy = |residual_energy(custom) - residual(extrap)|
+    normalised by the initial energy (a reflecting inflow would trap energy and
+    inflate this)."""
+    from pinn_bath.solver import make_characteristic_inflow
+
+    nx = 200
+    sea_level = 1.0
+    x = np.linspace(0.05, 9.95, nx)
+    zb = np.zeros(nx)
+    eta0 = sea_level + 0.1 * np.exp(-(((x - 5.0) / 0.5) ** 2))
+    h0 = eta0 - zb
+    hu0 = np.zeros_like(h0)
+    cb = make_characteristic_inflow(lambda t: 0.0, h_rest=sea_level, side="lower")
+    kw = dict(
+        xlower=0.0, xupper=10.0, t_end=6.0, num_output_times=60,
+        kernel="aug", cfl_desired=0.45,
+    )
+    sol_c = forward_solve(zb, h0, hu0, bc_lower="custom", bc_upper="extrap", user_bc_lower=cb, **kw)
+    sol_r = forward_solve(zb, h0, hu0, bc="extrap", **kw)
+
+    def energy(sol):
+        return ((sol["eta"] - sea_level) ** 2).mean(axis=1)
+
+    e_c, e_r = energy(sol_c), energy(sol_r)
+    e0 = float(e_c[0])
+    residual_frac = float(e_c[-1] / e0)
+    refl_proxy = float(abs(e_c[-1] - e_r[-1]) / e0)
+    print("\n=== Incident-wave inflow (no-reflexión) ===")
+    print(f"  energía residual custom/inicial : {residual_frac:.4f}")
+    print(f"  proxy de reflexión |custom-extrap|/E0: {refl_proxy:.4f}")
+    return refl_proxy
+
+
 if __name__ == "__main__":
     rmse = validate_thacker()
     spurious = validate_lake_at_rest()
+    refl = validate_incident_inflow()
     h_scale = 0.5
     thacker_ok = rmse < 0.05 * h_scale
     lake_ok = spurious < 1e-3
+    inflow_ok = refl < 0.05
     print()
     print(
-        f"Thacker      : {'PASS' if thacker_ok else 'REVIEW'}  (RMSE {rmse:.5f} m < {0.05 * h_scale:.4f})"
+        f"Thacker         : {'PASS' if thacker_ok else 'REVIEW'}  (RMSE {rmse:.5f} m < {0.05 * h_scale:.4f})"
     )
-    print(f"Lake-at-rest : {'PASS' if lake_ok else 'REVIEW'}  (|u| {spurious:.2e} m/s < 1e-3)")
-    print(f"\nGATE F0: {'PASS ✓' if (thacker_ok and lake_ok) else 'REVIEW'}")
+    print(f"Lake-at-rest    : {'PASS' if lake_ok else 'REVIEW'}  (|u| {spurious:.2e} m/s < 1e-3)")
+    print(f"Inflow no-refl. : {'PASS' if inflow_ok else 'REVIEW'}  (proxy {refl:.4f} < 0.05)")
+    gate = thacker_ok and lake_ok and inflow_ok
+    print(f"\nGATE F0: {'PASS ✓' if gate else 'REVIEW'}")

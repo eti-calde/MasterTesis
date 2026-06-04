@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any
 
@@ -82,6 +83,10 @@ def forward_solve(
     num_output_times: int = 100,
     g: float = DEFAULT_G,
     bc: str = "extrap",
+    bc_lower: str | None = None,
+    bc_upper: str | None = None,
+    user_bc_lower: Any = None,
+    user_bc_upper: Any = None,
     kernel: str = "aug",
     dry_tolerance: float = 1e-3,
     sea_level: float = 0.0,
@@ -104,9 +109,18 @@ def forward_solve(
         Number of saved snapshots after ``t=0`` (total frames = this + 1).
     g : float
         Gravity (match the SWE residual; default 9.81).
-    bc : {"extrap", "wall", "periodic"}
+    bc : {"extrap", "wall", "periodic", "custom"}
         Boundary condition on both ends. ``extrap`` = transmissive/outflow;
-        ``wall`` = reflective; ``periodic`` = wrap.
+        ``wall`` = reflective; ``periodic`` = wrap; ``custom`` = caller-supplied
+        ghost-cell callback (see ``user_bc_*``).
+    bc_lower, bc_upper : same choices, optional
+        Per-edge override of ``bc`` (left / right). If ``None`` the single
+        ``bc`` value applies to that edge. Lets one edge force a time-dependent
+        inflow while the other is ``extrap`` (open fjord-mouth geometry).
+    user_bc_lower, user_bc_upper : callables, optional
+        Ghost-cell fillers ``fn(state, dim, t, qbc, num_ghost)`` required when
+        the matching edge is ``"custom"``. Build the incident-wave inflow with
+        :func:`make_characteristic_inflow`.
     kernel : {"aug", "fwave"}
         Riemann kernel. ``aug`` (default) is the augmented GeoClaw-style
         solver, robust to wet/dry fronts (required for drying basins; validated
@@ -146,15 +160,36 @@ def forward_solve(
     solver.cfl_desired = cfl_desired
     solver.cfl_max = cfl_max
 
-    bcmap = {"extrap": pyclaw.BC.extrap, "wall": pyclaw.BC.wall, "periodic": pyclaw.BC.periodic}
-    if bc not in bcmap:
-        raise ValueError(f"bc must be one of {sorted(bcmap)}; got {bc!r}")
-    solver.bc_lower[0] = bcmap[bc]
-    solver.bc_upper[0] = bcmap[bc]
-    # Bathymetry (aux) cannot be reflected like a state; extrapolate at walls.
-    aux_bc = bcmap[bc] if bc != "wall" else pyclaw.BC.extrap
-    solver.aux_bc_lower[0] = aux_bc
-    solver.aux_bc_upper[0] = aux_bc
+    bcmap = {
+        "extrap": pyclaw.BC.extrap,
+        "wall": pyclaw.BC.wall,
+        "periodic": pyclaw.BC.periodic,
+        "custom": pyclaw.BC.custom,
+    }
+    lo = bc_lower if bc_lower is not None else bc
+    hi = bc_upper if bc_upper is not None else bc
+    for name, edge in (("bc_lower", lo), ("bc_upper", hi)):
+        if edge not in bcmap:
+            raise ValueError(f"{name} must be one of {sorted(bcmap)}; got {edge!r}")
+    solver.bc_lower[0] = bcmap[lo]
+    solver.bc_upper[0] = bcmap[hi]
+    if lo == "custom":
+        if user_bc_lower is None:
+            raise ValueError("bc_lower='custom' requires user_bc_lower callback")
+        solver.user_bc_lower = user_bc_lower
+    if hi == "custom":
+        if user_bc_upper is None:
+            raise ValueError("bc_upper='custom' requires user_bc_upper callback")
+        solver.user_bc_upper = user_bc_upper
+
+    # Bathymetry (aux) is static: it cannot be reflected like a state, and a
+    # custom state inflow still wants a plain extrapolated bed. Extrapolate at
+    # wall/custom edges; otherwise mirror the state BC (extrap/periodic).
+    def _aux_bc(edge: str) -> int:
+        return pyclaw.BC.extrap if edge in ("wall", "custom") else bcmap[edge]
+
+    solver.aux_bc_lower[0] = _aux_bc(lo)
+    solver.aux_bc_upper[0] = _aux_bc(hi)
 
     x = pyclaw.Dimension(xlower, xupper, nx, name="x")
     domain = pyclaw.Domain(x)
@@ -192,3 +227,79 @@ def forward_solve(
     u[h < dry_tolerance] = 0.0
     eta = h + zb[None, :]
     return {"t": t, "x": xc, "h": h, "hu": hu, "u": u, "eta": eta, "zb": zb}
+
+
+def make_characteristic_inflow(
+    eta_signal: Callable[[float], float],
+    *,
+    h_rest: float,
+    g: float = DEFAULT_G,
+    side: str = "lower",
+    dry_tolerance: float = 1e-3,
+) -> Callable[..., None]:
+    r"""Build a time-dependent, (near) non-reflecting inflow ghost-cell filler.
+
+    Injects an incident free-surface signal ``eta_signal(t)`` (the perturbation
+    :math:`\delta\eta` about the still depth ``h_rest``) at one boundary as a
+    *simple wave* travelling into the domain, while letting interior-borne waves
+    leave with minimal reflection. Implemented via the shallow-water Riemann
+    invariants :math:`R^\pm = u \pm 2\sqrt{g h}`: the *incoming* invariant is set
+    from the prescribed wave, the *outgoing* one is extrapolated from the first
+    interior cell, and the ghost ``(h, hu)`` is reconstructed from the pair
+    (:math:`u_g = (R^+ + R^-)/2`, :math:`\sqrt{g h_g} = (R^+ - R^-)/4`).
+
+    Parameters
+    ----------
+    eta_signal : callable ``t -> δη`` (metres) — surface perturbation at the edge.
+    h_rest : still-water depth at the boundary (``sea_level - zb_boundary``).
+    g : gravity (match the solver / SWE residual).
+    side : ``'lower'`` (inflow from left, wave → +x) or ``'upper'`` (from right,
+        wave -> -x).
+    dry_tolerance : depth floor (avoids division by zero in shallow ghosts).
+
+    Returns
+    -------
+    callable
+        A filler with PyClaw's current signature
+        ``fn(state, dim, t, qbc, auxbc, num_ghost)`` (Clawpack 5.13+; the 5-arg
+        form is deprecated). ``auxbc`` (the static bathymetry ghost) is unused.
+        Assignable to ``solver.user_bc_lower`` / ``solver.user_bc_upper``.
+    """
+    if side not in ("lower", "upper"):
+        raise ValueError(f"side must be 'lower' or 'upper'; got {side!r}")
+    h_rest = max(float(h_rest), dry_tolerance)
+    c_rest = float(np.sqrt(g * h_rest))
+
+    def _ghost_state(h_int: float, hu_int: float, t: float) -> tuple[float, float]:
+        h_int = max(float(h_int), dry_tolerance)
+        u_int = float(hu_int) / h_int
+        c_int = np.sqrt(g * h_int)
+        deta = float(eta_signal(t))
+        h_in = max(h_rest + deta, dry_tolerance)
+        c_in = np.sqrt(g * h_in)
+        if side == "lower":
+            u_in = c_rest * deta / h_rest  # simple wave → +x
+            r_plus = u_in + 2.0 * c_in  # prescribed incoming (right-going)
+            r_minus = u_int - 2.0 * c_int  # outgoing (left-going), extrapolated
+        else:
+            u_in = -c_rest * deta / h_rest  # simple wave -> -x
+            r_minus = u_in - 2.0 * c_in  # prescribed incoming (left-going)
+            r_plus = u_int + 2.0 * c_int  # outgoing (right-going), extrapolated
+        u_g = 0.5 * (r_plus + r_minus)
+        c_g = 0.25 * (r_plus - r_minus)
+        h_g = max(c_g, 0.0) ** 2 / g
+        return h_g, h_g * u_g
+
+    def bc_fn(
+        state: Any, dim: Any, t: float, qbc: np.ndarray, auxbc: Any, num_ghost: int
+    ) -> None:
+        if side == "lower":
+            h_g, hu_g = _ghost_state(qbc[0, num_ghost], qbc[1, num_ghost], t)
+            qbc[0, :num_ghost] = h_g
+            qbc[1, :num_ghost] = hu_g
+        else:
+            h_g, hu_g = _ghost_state(qbc[0, -num_ghost - 1], qbc[1, -num_ghost - 1], t)
+            qbc[0, -num_ghost:] = h_g
+            qbc[1, -num_ghost:] = hu_g
+
+    return bc_fn

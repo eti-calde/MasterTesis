@@ -7,6 +7,6 @@ solver-agnostic interface so the case generator / dataset pipeline never import
 clawpack directly.
 """
 
-from pinn_bath.solver.swe1d import DEFAULT_G, forward_solve
+from pinn_bath.solver.swe1d import DEFAULT_G, forward_solve, make_characteristic_inflow
 
-__all__ = ["DEFAULT_G", "forward_solve"]
+__all__ = ["DEFAULT_G", "forward_solve", "make_characteristic_inflow"]

@@ -30,6 +30,7 @@ import numpy as np
 from pinn_bath.datasets.generator import (
     Difficulty,
     Grid,
+    Regime,
     generate_record,
     sample_case,
 )
@@ -43,13 +44,14 @@ def build_records(
     grid: Grid,
     rng: np.random.Generator,
     *,
+    regime: Regime = "incident_wave",
     progress_every: int = 25,
     **solver_kw: Any,
 ) -> dict[str, np.ndarray]:
     """Generate ``n`` solved cases for one difficulty tier, stacked."""
     zb, eta, u, score, seed = [], [], [], [], []
     for i in range(n):
-        spec = sample_case(difficulty, rng, grid)
+        spec = sample_case(difficulty, rng, grid, regime=regime)
         rec = generate_record(spec, grid, **solver_kw)
         if not np.isfinite(rec["eta"]).all():
             # Skip the rare unstable case rather than poison the dataset.

@@ -53,6 +53,12 @@ def main() -> None:
     p.add_argument("--val-frac", type=float, default=0.15)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--cfl", type=float, default=0.45)
+    p.add_argument(
+        "--regime",
+        choices=["incident_wave", "free_transient"],
+        default="incident_wave",
+        help="forcing regime (default: incident_wave — continuous inflow + outflow)",
+    )
     # Grid overrides (defaults match generator.Grid).
     p.add_argument("--nx", type=int, default=256)
     p.add_argument("--t-end", type=float, default=8.0)
@@ -68,9 +74,9 @@ def main() -> None:
     rng_e = np.random.default_rng(args.seed + 1)
     rng_m = np.random.default_rng(args.seed + 2)
     rng_h = np.random.default_rng(args.seed + 3)
-    rec_e = build_records("easy", args.n_easy, grid, rng_e, cfl_desired=args.cfl)
-    rec_m = build_records("medium", args.n_medium, grid, rng_m, cfl_desired=args.cfl)
-    rec_h = build_records("hard", args.n_hard, grid, rng_h, cfl_desired=args.cfl)
+    rec_e = build_records("easy", args.n_easy, grid, rng_e, regime=args.regime, cfl_desired=args.cfl)
+    rec_m = build_records("medium", args.n_medium, grid, rng_m, regime=args.regime, cfl_desired=args.cfl)
+    rec_h = build_records("hard", args.n_hard, grid, rng_h, regime=args.regime, cfl_desired=args.cfl)
 
     # Splits: train+val from easy+medium (in-distribution), test = hard (OOD).
     in_dist = _concat([rec_e, rec_m])
@@ -94,6 +100,7 @@ def main() -> None:
             "val_frac": args.val_frac,
             "seed": args.seed,
             "cfl": args.cfl,
+            "regime": args.regime,
         }
     )
     write_meta(args.out / "meta.json", meta)
