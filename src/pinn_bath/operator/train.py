@@ -91,6 +91,13 @@ def train_operator(
 ) -> dict[str, Any]:
     set_seed(seed, deterministic=False)  # conv kernels lack deterministic impls
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    # Throughput on Ampere+/Blackwell GPUs: TF32 matmul/conv (~fp32 accuracy) +
+    # cuDNN autotune. Input sizes are fixed (121x256), so the autotuned kernels
+    # are reused every step. No effect / harmless on CPU.
+    if str(device).startswith("cuda"):
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
     loaders = make_loaders(dataset_dir, batch_size=batch_size)
     norm, dx, dt = loaders["normalizer"], loaders["dx"], loaders["dt"]
     model = build_operator(arch, size=size).to(device)
