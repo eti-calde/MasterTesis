@@ -9,14 +9,17 @@ Examples
 --------
 Smoke (tiny, validates plumbing on the smoke dataset)::
 
-    .venv/bin/python scripts/sweep_operator.py --data runs/op_dataset_smoke \
+    .venv/bin/python scripts/sweep_operator.py --data runs/op_dataset_v2_smoke \
         --sizes medium --lambdas 0 --seeds 0 --epochs 4 --out runs/op_sweep_smoke
 
-Full (on demerzel, big dataset)::
+Full (v2 bank, GPU-resident data)::
 
-    .venv/bin/python scripts/sweep_operator.py --data runs/op_dataset \
+    .venv/bin/python scripts/sweep_operator.py --data runs/op_dataset_v2 \
         --sizes small medium large --lambdas 0 1e-3 1e-2 1e-1 --seeds 0 1 2 \
-        --epochs 300 --out runs/op_sweep
+        --epochs 300 --cache-data --out runs/op_sweep_v2
+
+Each cell runs at most --epochs but early-stops after --patience epochs
+without val improvement (val is evaluated every epoch).
 """
 
 from __future__ import annotations
@@ -40,8 +43,16 @@ def main() -> None:
     p.add_argument("--sizes", nargs="+", default=["small", "medium", "large"])
     p.add_argument("--lambdas", nargs="+", type=float, default=[0.0, 1e-3, 1e-2, 1e-1])
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
-    p.add_argument("--epochs", type=int, default=300)
+    p.add_argument("--epochs", type=int, default=300, help="maximum epoch budget per cell")
+    p.add_argument(
+        "--patience", type=int, default=50, help="early stop after N epochs without val improvement"
+    )
     p.add_argument("--batch-size", type=int, default=16)
+    p.add_argument(
+        "--cache-data",
+        action="store_true",
+        help="cache the whole dataset on the compute device (no per-step H2D copies)",
+    )
     p.add_argument("--device", default=None)
     args = p.parse_args()
 
@@ -69,7 +80,9 @@ def main() -> None:
             size=size,
             lambda_phys=lam,
             epochs=args.epochs,
+            patience=args.patience,
             batch_size=args.batch_size,
+            cache_data=args.cache_data,
             seed=seed,
             device=args.device,
             out_dir=cdir,

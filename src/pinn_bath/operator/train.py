@@ -40,7 +40,7 @@ def evaluate(model, loader, norm, device, *, by_tier: bool = False):
         se += float(sq.sum())
         n += zb.numel()
         if by_tier:
-            diff = b["difficulty"].numpy()
+            diff = b["difficulty"].cpu().numpy()
             nx = zb.shape[-1]
             for c in set(diff.tolist()):
                 m = diff == c
@@ -66,8 +66,8 @@ def evaluate_per_case(model, loader, norm, device) -> dict[str, np.ndarray]:
         zb_pred = norm.denorm_zb(model(norm.input_tensor(eta, u)))
         per = ((zb_pred - zb) ** 2).mean(dim=-1).sqrt().cpu().numpy()
         rmse.append(per)
-        score.append(b["score"].numpy())
-        diff.append(b["difficulty"].numpy())
+        score.append(b["score"].cpu().numpy())
+        diff.append(b["difficulty"].cpu().numpy())
     return {
         "rmse": np.concatenate(rmse),
         "score": np.concatenate(score),
@@ -88,17 +88,32 @@ def train_operator(
     device: str | None = None,
     out_dir: str | Path | None = None,
     log_every: int = 10,
+    patience: int = 50,
+    grad_clip: float | None = None,
+    cache_data: bool = False,
 ) -> dict[str, Any]:
+    """Train one operator config.
+
+    ``epochs`` is the maximum budget; training stops early when validation
+    RMSE has not improved for ``patience`` consecutive epochs (validation runs
+    every epoch, so the best checkpoint is exact). ``grad_clip`` enables real
+    gradient clipping at that max-norm (default: measure-only, no clipping).
+    ``cache_data`` moves the whole dataset to the compute device once
+    (GPU-resident batches, no per-step H2D copies; ~7 GB for the v2 bank).
+    """
     set_seed(seed, deterministic=False)  # conv kernels lack deterministic impls
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     # Throughput on Ampere+/Blackwell GPUs: TF32 matmul/conv (~fp32 accuracy) +
-    # cuDNN autotune. Input sizes are fixed (121x256), so the autotuned kernels
-    # are reused every step. No effect / harmless on CPU.
+    # cuDNN autotune. Input sizes are fixed within a dataset (constant Nt x Nx
+    # across cases), so the autotuned kernels are reused every step. No effect
+    # / harmless on CPU.
     if str(device).startswith("cuda"):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
-    loaders = make_loaders(dataset_dir, batch_size=batch_size)
+    loaders = make_loaders(
+        dataset_dir, batch_size=batch_size, cache_device=device if cache_data else None
+    )
     norm, dx, dt = loaders["normalizer"], loaders["dx"], loaders["dt"]
     model = build_operator(arch, size=size).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
@@ -116,6 +131,9 @@ def train_operator(
     best_val = float("inf")
     best_state = None
     best_epoch = -1
+    epochs_since_best = 0
+    early_stopped = False
+    epochs_run = 0
     t0 = time.time()
     for epoch in range(epochs):
         model.train()
@@ -133,7 +151,12 @@ def train_operator(
                 phys_val, cont, mom = float(lp.detach()), parts["cont"], parts["mom"]
             opt.zero_grad()
             loss.backward()
-            gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1e9)
+            # max_norm=inf -> measurement only (logged below); pass grad_clip
+            # to enable actual clipping at that norm.
+            gnorm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(),
+                max_norm=grad_clip if grad_clip is not None else float("inf"),
+            )
             opt.step()
             ep_loss += float(loss.detach())
             ep_mse += float(mse.detach())
@@ -155,19 +178,27 @@ def train_operator(
             "train_phys_mom": ep_mom / nb,
             "grad_norm": ep_gnorm / nb,
         }
-        # Expensive eval (val + OOD test, per tier) only every eval_every epochs.
+        # Cheap val pass EVERY epoch: exact best-checkpoint selection and the
+        # early-stopping signal. The expensive evals (per-tier val + OOD test)
+        # stay on the log_every cadence.
         do_eval = epoch % log_every == 0 or epoch == epochs - 1
         if do_eval:
             val = evaluate(model, loaders["val"], norm, device, by_tier=True)
             test = evaluate(model, loaders["test"], norm, device, by_tier=True)
-            row["val_rmse"] = val["all"]
+            val_rmse = val["all"]
             row["test_rmse_ood"] = test["all"]
             for k, v in val.items():
                 if k != "all":
                     row[f"val_rmse_{k}"] = v
-            if val["all"] < best_val:
-                best_val, best_epoch = val["all"], epoch
-                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        else:
+            val_rmse = evaluate(model, loaders["val"], norm, device)
+        row["val_rmse"] = val_rmse
+        if val_rmse < best_val:
+            best_val, best_epoch = val_rmse, epoch
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            epochs_since_best = 0
+        else:
+            epochs_since_best += 1
         if metrics_fh:
             metrics_fh.write(json.dumps(row) + "\n")
             metrics_fh.flush()
@@ -179,6 +210,15 @@ def train_operator(
                 flush=True,
             )
         sched.step()
+        epochs_run = epoch + 1
+        if epochs_since_best >= patience:
+            early_stopped = True
+            print(
+                f"[{epoch:4d}] early stop: no val improvement for {patience} epochs "
+                f"(best {best_val:.4f} @ {best_epoch})",
+                flush=True,
+            )
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -189,6 +229,11 @@ def train_operator(
         "params": count_parameters(model),
         "device": device,
         "epochs": epochs,
+        "epochs_run": epochs_run,
+        "early_stopped": early_stopped,
+        "patience": patience,
+        "grad_clip": grad_clip,
+        "cache_data": cache_data,
         "seed": seed,
         "val_rmse": evaluate(model, loaders["val"], norm, device),
         "test_rmse_ood": evaluate(model, loaders["test"], norm, device),
