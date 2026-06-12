@@ -66,11 +66,14 @@ def _solve_case(spec: CaseSpec) -> dict[str, np.ndarray] | None:
     res = _ENV.simulate(spec, _BACKEND)
     if not res.ok:
         return None
-    return {
+    out = {
         "zb": res.zb.astype(np.float32),
         "eta": res.eta.astype(np.float32),
         "u": res.u.astype(np.float32),
     }
+    if res.v is not None:  # 2D backends fill the transverse velocity
+        out["v"] = res.v.astype(np.float32)
+    return out
 
 
 class DatasetBuilder:
@@ -92,13 +95,23 @@ class DatasetBuilder:
         self.chunk = max(1, chunk)
 
     # ------------------------------------------------------------------ #
+    @property
+    def _is2d(self) -> bool:
+        return hasattr(self.env.grid, "ny")
+
     def _alloc_split(self, n: int) -> dict[str, np.ndarray]:
         grid = self.env.grid
-        nx, nt = grid.nx, grid.n_t + 1
-        return {
-            "zb": np.empty((n, nx), dtype=np.float32),
-            "eta": np.empty((n, nt, nx), dtype=np.float32),
-            "u": np.empty((n, nt, nx), dtype=np.float32),
+        nt = grid.n_t + 1
+        if self._is2d:
+            fshape: tuple[int, ...] = (n, nt, grid.ny, grid.nx)
+            zshape: tuple[int, ...] = (n, grid.ny, grid.nx)
+        else:
+            fshape = (n, nt, grid.nx)
+            zshape = (n, grid.nx)
+        out = {
+            "zb": np.empty(zshape, dtype=np.float32),
+            "eta": np.empty(fshape, dtype=np.float32),
+            "u": np.empty(fshape, dtype=np.float32),
             "score": np.empty(n, dtype=np.float32),
             "difficulty": np.empty(n, dtype=np.int8),
             "seed": np.empty(n, dtype=np.int64),
@@ -106,6 +119,9 @@ class DatasetBuilder:
             "spring_neap": np.empty(n, dtype=np.float32),
             "water_level": np.empty(n, dtype=np.float32),
         }
+        if self._is2d:
+            out["v"] = np.empty(fshape, dtype=np.float32)
+        return out
 
     def _fill_tier(
         self,
@@ -129,6 +145,8 @@ class DatasetBuilder:
                 arrs["zb"][i] = rec["zb"]
                 arrs["eta"][i] = rec["eta"]
                 arrs["u"][i] = rec["u"]
+                if "v" in arrs:
+                    arrs["v"][i] = rec["v"]
                 arrs["score"][i] = spec.score
                 arrs["difficulty"][i] = code
                 arrs["seed"][i] = spec.seed
@@ -221,10 +239,16 @@ class DatasetBuilder:
         if (s_tr & s_va) or (s_tr & s_te) or (s_va & s_te):
             raise RuntimeError("seed leakage across splits")
 
+        axes: dict[str, np.ndarray] = {"t": t_axis}
+        if self._is2d:
+            axes["x"] = grid.x_centers.astype(np.float32)
+            axes["y"] = grid.y_centers.astype(np.float32)
+        else:
+            axes["x"] = grid.centers.astype(np.float32)
         for name, arrs in splits.items():
             path = out_dir / f"{name}.npz"
             log.info("saving %s ...", path)
-            np.savez_compressed(path, x=grid.centers.astype(np.float32), t=t_axis, **arrs)
+            np.savez_compressed(path, **axes, **arrs)
 
         manifest = self._manifest(n_train, n_val, n_test, skipped, elapsed)
         (out_dir / "meta.json").write_text(json.dumps(manifest, indent=2))
@@ -269,13 +293,12 @@ class DatasetBuilder:
                 },
             },
         }
-        # Sampler configuration (full reproducibility record).
+        # Sampler configuration (full reproducibility record). asdict recurses
+        # into the tier table and works for both the 1D and 2D samplers.
         if hasattr(env, "bathymetry"):
             m["bathymetry_sampler"] = {
-                "slope_range": list(env.bathymetry.slope_range),
-                "margin": env.bathymetry.margin,
-                "gaussian_prob": env.bathymetry.gaussian_prob,
-                "tiers": {k: asdict(v) for k, v in env.bathymetry.tiers.items()},
+                "type": type(env.bathymetry).__name__,
+                **asdict(env.bathymetry),
             }
         if hasattr(env, "forcing"):
             m["forcing_sampler"] = asdict(env.forcing)

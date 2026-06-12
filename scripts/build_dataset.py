@@ -3,6 +3,16 @@
 
 Splits (OOD by difficulty): train/val = easy+medium (50/50), test = hard.
 Output under --out: ``train.npz``, ``val.npz``, ``test.npz``, ``meta.json``.
+``--env fjord2d`` builds the 2D bank instead (fields gain the y axis and the
+transverse velocity ``v``). 2D cases are ~25x heavier on disk than 1D at full
+resolution (~60 MB/case at 161x128x256): size the counts accordingly, e.g.
+a first 2D bank of 1500/250/750 at --nx 128 --ny 64 --n-t 80 is ~20 GB.
+
+2D smoke (a few minutes)::
+
+    .venv/bin/python scripts/build_dataset.py --env fjord2d \
+        --out runs/op2d_smoke --n-train 4 --n-val 2 --n-test 2 \
+        --nx 128 --ny 64 --n-t 80 --workers 4
 
 Smoke run (a few minutes, validates the pipeline end to end)::
 
@@ -31,7 +41,14 @@ from pathlib import Path
 
 import numpy as np
 
-from pinn_bath.datagen import Grid1D, IncidentWaveFjord1D, PyClawSWE1D
+from pinn_bath.datagen import (
+    Grid1D,
+    Grid2D,
+    IncidentWaveFjord1D,
+    IncidentWaveFjord2D,
+    PyClawSWE1D,
+    PyClawSWE2D,
+)
 from pinn_bath.datagen.builder import DatasetBuilder
 
 log = logging.getLogger("build_dataset")
@@ -67,11 +84,20 @@ def main() -> int:
     p.add_argument("--chunk", type=int, default=64, help="cases per scheduling batch")
     p.add_argument("--cfl", type=float, default=0.45, help="solver CFL (conservative default)")
     p.add_argument("--log-file", type=Path, default=None)
+    p.add_argument(
+        "--env",
+        choices=["fjord1d", "fjord2d"],
+        default="fjord1d",
+        help="environment: 1D transect (default) or 2D channel",
+    )
     # Grid overrides (defaults are the justified v2 bank; see paper).
     p.add_argument("--length", type=float, default=40.0)
-    p.add_argument("--nx", type=int, default=512)
+    p.add_argument("--nx", type=int, default=None, help="cells in x (default: 512 1D / 256 2D)")
     p.add_argument("--t-end", type=float, default=40.0)
     p.add_argument("--n-t", type=int, default=160)
+    # 2D-only grid overrides.
+    p.add_argument("--ly", type=float, default=20.0, help="channel width [m] (2D)")
+    p.add_argument("--ny", type=int, default=128, help="cells in y (2D)")
     args = p.parse_args()
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
@@ -84,9 +110,21 @@ def main() -> int:
         handlers=handlers,
     )
 
-    grid = Grid1D(xupper=args.length, nx=args.nx, t_end=args.t_end, n_t=args.n_t)
-    env = IncidentWaveFjord1D(grid=grid)
-    backend = PyClawSWE1D(cfl_desired=args.cfl)
+    if args.env == "fjord1d":
+        grid = Grid1D(xupper=args.length, nx=args.nx or 512, t_end=args.t_end, n_t=args.n_t)
+        env = IncidentWaveFjord1D(grid=grid)
+        backend = PyClawSWE1D(cfl_desired=args.cfl)
+    else:
+        grid2 = Grid2D(
+            xupper=args.length,
+            nx=args.nx or 256,
+            yupper=args.ly,
+            ny=args.ny,
+            t_end=args.t_end,
+            n_t=args.n_t,
+        )
+        env = IncidentWaveFjord2D(grid=grid2)
+        backend = PyClawSWE2D(cfl_desired=args.cfl)
     builder = DatasetBuilder(env, backend, seed=args.seed, workers=args.workers, chunk=args.chunk)
 
     try:

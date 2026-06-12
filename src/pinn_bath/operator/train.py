@@ -18,8 +18,15 @@ import torch.nn.functional as F
 
 from pinn_bath.operator.architectures import build_operator, count_parameters
 from pinn_bath.operator.data import make_loaders
-from pinn_bath.operator.physics import physics_loss
+from pinn_bath.operator.physics import physics_loss, physics_loss_2d
 from pinn_bath.seed import set_seed
+
+
+def _unpack(b, device):
+    """Move one batch to the device; ``v`` is None on 1D datasets."""
+    eta, u, zb = b["eta"].to(device), b["u"].to(device), b["zb"].to(device)
+    v = b["v"].to(device) if "v" in b else None
+    return eta, u, v, zb
 
 
 @torch.no_grad()
@@ -34,9 +41,9 @@ def evaluate(model, loader, norm, device, *, by_tier: bool = False):
     tier_se: dict[int, float] = {}
     tier_n: dict[int, int] = {}
     for b in loader:
-        eta, u, zb = b["eta"].to(device), b["u"].to(device), b["zb"].to(device)
-        zb_pred = norm.denorm_zb(model(norm.input_tensor(eta, u)))
-        sq = ((zb_pred - zb) ** 2).sum(dim=-1)  # per-case SSE
+        eta, u, v, zb = _unpack(b, device)
+        zb_pred = norm.denorm_zb(model(norm.input_tensor(eta, u, v)))
+        sq = ((zb_pred - zb) ** 2).flatten(start_dim=1).sum(dim=-1)  # per-case SSE
         se += float(sq.sum())
         n += zb.numel()
         if by_tier:
@@ -62,9 +69,9 @@ def evaluate_per_case(model, loader, norm, device) -> dict[str, np.ndarray]:
     model.eval()
     rmse, score, diff = [], [], []
     for b in loader:
-        eta, u, zb = b["eta"].to(device), b["u"].to(device), b["zb"].to(device)
-        zb_pred = norm.denorm_zb(model(norm.input_tensor(eta, u)))
-        per = ((zb_pred - zb) ** 2).mean(dim=-1).sqrt().cpu().numpy()
+        eta, u, v, zb = _unpack(b, device)
+        zb_pred = norm.denorm_zb(model(norm.input_tensor(eta, u, v)))
+        per = ((zb_pred - zb) ** 2).flatten(start_dim=1).mean(dim=-1).sqrt().cpu().numpy()
         rmse.append(per)
         score.append(b["score"].cpu().numpy())
         diff.append(b["difficulty"].cpu().numpy())
@@ -115,6 +122,7 @@ def train_operator(
         dataset_dir, batch_size=batch_size, cache_device=device if cache_data else None
     )
     norm, dx, dt = loaders["normalizer"], loaders["dx"], loaders["dt"]
+    dy = loaders["dy"]  # None on 1D datasets; set on 2D (drives the residual)
     model = build_operator(arch, size=size).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     # Cosine decay to ~1% of lr by the final epoch — damps the late-training
@@ -140,13 +148,17 @@ def train_operator(
         ep_loss = ep_mse = ep_phys = ep_cont = ep_mom = ep_gnorm = 0.0
         nb = 0
         for b in loaders["train"]:
-            eta, u, zb = b["eta"].to(device), b["u"].to(device), b["zb"].to(device)
-            zb_pred_n = model(norm.input_tensor(eta, u))
+            eta, u, v, zb = _unpack(b, device)
+            zb_pred_n = model(norm.input_tensor(eta, u, v))
             mse = F.mse_loss(zb_pred_n, norm.norm_zb(zb))
             loss = mse
             phys_val = cont = mom = 0.0
             if lambda_phys > 0:
-                lp, parts = physics_loss(eta, u, norm.denorm_zb(zb_pred_n), dx, dt)
+                zb_phys = norm.denorm_zb(zb_pred_n)
+                if v is not None:
+                    lp, parts = physics_loss_2d(eta, u, v, zb_phys, dx, dy, dt)
+                else:
+                    lp, parts = physics_loss(eta, u, zb_phys, dx, dt)
                 loss = mse + lambda_phys * lp
                 phys_val, cont, mom = float(lp.detach()), parts["cont"], parts["mom"]
             opt.zero_grad()
@@ -239,7 +251,7 @@ def train_operator(
         "test_rmse_ood": evaluate(model, loaders["test"], norm, device),
         "best_val_rmse": best_val,
         "best_epoch": best_epoch,
-        "physics_floor_true_zb": _physics_floor(loaders, norm, dx, dt, device),
+        "physics_floor_true_zb": _physics_floor(loaders, norm, dx, dy, dt, device),
     }
     if out_dir:
         if metrics_fh:
@@ -252,9 +264,12 @@ def train_operator(
 
 
 @torch.no_grad()
-def _physics_floor(loaders, norm, dx, dt, device) -> float:
+def _physics_floor(loaders, norm, dx, dy, dt, device) -> float:
     """SWE residual evaluated on the TRUE zb of the val set (signal floor)."""
     b = next(iter(loaders["val"]))
-    eta, u, zb = b["eta"].to(device), b["u"].to(device), b["zb"].to(device)
-    lp, _ = physics_loss(eta, u, zb, dx, dt)
+    eta, u, v, zb = _unpack(b, device)
+    if v is not None:
+        lp, _ = physics_loss_2d(eta, u, v, zb, dx, dy, dt)
+    else:
+        lp, _ = physics_loss(eta, u, zb, dx, dt)
     return float(lp)

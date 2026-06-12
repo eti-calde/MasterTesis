@@ -25,8 +25,8 @@ from pinn_bath.operator.train import train_operator
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, required=True)
-    p.add_argument("--arch", default="cnn")
-    p.add_argument("--size", default="small", choices=["small", "medium", "large"])
+    p.add_argument("--arch", default="cnn", choices=["cnn", "cnn2d"], help="cnn = 1D, cnn2d = 2D")
+    p.add_argument("--size", default="small", choices=["tiny", "small", "medium", "large"])
     p.add_argument("--lambda-phys", type=float, default=0.0)
     p.add_argument("--epochs", type=int, default=300, help="maximum epoch budget")
     p.add_argument(

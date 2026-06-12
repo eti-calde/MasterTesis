@@ -34,31 +34,47 @@ from pinn_bath.datasets.operator_dataset import load_split
 
 @dataclass
 class Normalizer:
-    """Standardizes (eta, u) inputs and zb targets to ~unit scale."""
+    """Standardizes (eta, u[, v]) inputs and zb targets to ~unit scale.
+
+    ``v_std`` is fit only for 2D datasets (transverse velocity present);
+    it stays None on 1D datasets and the input tensor then has 2 channels.
+    """
 
     eta_mean: float
     eta_std: float
     u_std: float
     zb_mean: float
     zb_std: float
+    v_std: float | None = None
 
     @classmethod
-    def fit(cls, eta: np.ndarray, u: np.ndarray, zb: np.ndarray) -> Normalizer:
+    def fit(
+        cls, eta: np.ndarray, u: np.ndarray, zb: np.ndarray, v: np.ndarray | None = None
+    ) -> Normalizer:
         return cls(
             eta_mean=float(eta.mean()),
             eta_std=float(eta.std() + 1e-8),
-            # u is ~zero-mean across the dataset: the inflow side is randomized
-            # per case, so left- and right-going transport cancel in aggregate.
+            # u (and v in 2D) is ~zero-mean across the dataset: the inflow side
+            # is randomized per case, so transport directions cancel overall.
             u_std=float(u.std() + 1e-8),
             zb_mean=float(zb.mean()),
             zb_std=float(zb.std() + 1e-8),
+            v_std=None if v is None else float(v.std() + 1e-8),
         )
 
-    def input_tensor(self, eta: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        """Stack normalized (eta, u) into a (..., 2, Nt, Nx) channel tensor."""
-        en = (eta - self.eta_mean) / self.eta_std
-        un = u / self.u_std
-        return torch.stack([en, un], dim=-3)
+    def input_tensor(
+        self, eta: torch.Tensor, u: torch.Tensor, v: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Stack normalized fields into a channel tensor:
+        ``(..., 2, Nt, Nx)`` in 1D, ``(..., 3, Nt, Ny, Nx)`` with ``v``."""
+        chans = [(eta - self.eta_mean) / self.eta_std, u / self.u_std]
+        if v is not None:
+            if self.v_std is None:
+                raise ValueError("v given but Normalizer was fit without v")
+            chans.append(v / self.v_std)
+        # Channel axis sits before the field block: (Nt, Nx) -> -3 in 1D,
+        # (Nt, Ny, Nx) -> -4 in 2D (with or without leading batch dims).
+        return torch.stack(chans, dim=-4 if v is not None else -3)
 
     def norm_zb(self, zb: torch.Tensor) -> torch.Tensor:
         return (zb - self.zb_mean) / self.zb_std
@@ -77,33 +93,47 @@ class Normalizer:
 
 
 class OperatorDataset(Dataset):
-    """Yields raw (eta, u, zb) fields + difficulty for one split."""
+    """Yields raw (eta, u[, v], zb) fields + difficulty for one split.
+
+    1D splits: ``eta``/``u`` are (N, Nt, Nx), ``zb`` (N, Nx). 2D splits
+    additionally carry ``v`` and ``y``; fields are (N, Nt, Ny, Nx) and
+    ``zb`` (N, Ny, Nx). ``v is None`` marks a 1D dataset.
+    """
 
     def __init__(self, split_path: str | Path):
         d = load_split(split_path)
-        self.eta = torch.from_numpy(d["eta"]).float()  # (N, Nt, Nx)
+        self.eta = torch.from_numpy(d["eta"]).float()
         self.u = torch.from_numpy(d["u"]).float()
-        self.zb = torch.from_numpy(d["zb"]).float()  # (N, Nx)
+        self.v = torch.from_numpy(d["v"]).float() if "v" in d else None
+        self.zb = torch.from_numpy(d["zb"]).float()
         self.score = torch.from_numpy(d["score"]).float()
         self.difficulty = torch.from_numpy(d["difficulty"]).long()
         self.x = torch.from_numpy(d["x"]).float()
+        self.y = torch.from_numpy(d["y"]).float() if "y" in d else None
         self.t = torch.from_numpy(d["t"]).float()
 
     def __len__(self) -> int:
         return self.eta.shape[0]
 
     def __getitem__(self, i: int) -> dict[str, torch.Tensor]:
-        return {
+        item = {
             "eta": self.eta[i],
             "u": self.u[i],
             "zb": self.zb[i],
             "score": self.score[i],
             "difficulty": self.difficulty[i],
         }
+        if self.v is not None:
+            item["v"] = self.v[i]
+        return item
 
     @property
     def dx(self) -> float:
         return float(self.x[1] - self.x[0])
+
+    @property
+    def dy(self) -> float | None:
+        return None if self.y is None else float(self.y[1] - self.y[0])
 
     @property
     def dt(self) -> float:
@@ -142,13 +172,16 @@ class TensorBatchLoader:
 
 
 def _cache_split(ds: OperatorDataset, device: str) -> dict[str, torch.Tensor]:
-    return {
+    out = {
         "eta": ds.eta.to(device),
         "u": ds.u.to(device),
         "zb": ds.zb.to(device),
         "score": ds.score.to(device),
         "difficulty": ds.difficulty.to(device),
     }
+    if ds.v is not None:
+        out["v"] = ds.v.to(device)
+    return out
 
 
 def make_loaders(
@@ -171,7 +204,12 @@ def make_loaders(
     val = OperatorDataset(dataset_dir / "val.npz")
     test = OperatorDataset(dataset_dir / "test.npz")
     # Fit on CPU tensors before any device caching.
-    norm = Normalizer.fit(train.eta.numpy(), train.u.numpy(), train.zb.numpy())
+    norm = Normalizer.fit(
+        train.eta.numpy(),
+        train.u.numpy(),
+        train.zb.numpy(),
+        v=None if train.v is None else train.v.numpy(),
+    )
     if cache_device is None:
         train_loader: object = DataLoader(train, batch_size=batch_size, shuffle=True)
         val_loader: object = DataLoader(val, batch_size=batch_size, shuffle=False)
@@ -192,8 +230,11 @@ def make_loaders(
         "test": test_loader,
         "normalizer": norm,
         "dx": train.dx,
+        "dy": train.dy,  # None on 1D datasets
         "dt": train.dt,
         "nx": train.eta.shape[-1],
-        "nt": train.eta.shape[-2],
+        "ny": train.eta.shape[-2] if train.v is not None else None,
+        "nt": train.eta.shape[1],
+        "dim": 2 if train.v is not None else 1,
         "cache_device": cache_device,
     }

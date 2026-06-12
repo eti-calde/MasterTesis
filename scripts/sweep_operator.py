@@ -40,6 +40,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--arch", default="cnn", choices=["cnn", "cnn2d"], help="cnn = 1D, cnn2d = 2D")
     p.add_argument("--sizes", nargs="+", default=["small", "medium", "large"])
     p.add_argument("--lambdas", nargs="+", type=float, default=[0.0, 1e-3, 1e-2, 1e-1])
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
@@ -76,7 +77,7 @@ def main() -> None:
         print(f"{tag} -> running ...", flush=True)
         res = train_operator(
             args.data,
-            arch="cnn",
+            arch=args.arch,
             size=size,
             lambda_phys=lam,
             epochs=args.epochs,
