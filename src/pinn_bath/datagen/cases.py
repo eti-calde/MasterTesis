@@ -23,9 +23,9 @@ from typing import Any, Literal
 
 import numpy as np
 
-from pinn_bath.datagen.bathymetry import BathymetryField, Difficulty
+from pinn_bath.datagen.bathymetry import BathymetryField, BathymetryField2D, Difficulty
 from pinn_bath.datagen.forcing import WaveForcing
-from pinn_bath.datagen.grids import Grid1D
+from pinn_bath.datagen.grids import Grid1D, Grid2D
 
 BoundaryKind = Literal["incident_wave", "outflow", "wall", "periodic"]
 
@@ -67,11 +67,18 @@ class BoundarySpec:
     ``incident_wave`` requires ``eta_signal`` (surface perturbation ``t ->
     delta_eta`` at the edge) and ``h_rest`` (still depth at the edge); the
     other kinds carry no payload. ``periodic`` must be used on both edges.
+
+    ``water_level`` (optional, used by 2D backends): the case's still water
+    level. When set, the plane-wave inflow computes the rest depth *per
+    y-column* from the edge bathymetry (``water_level - zb``) instead of the
+    scalar ``h_rest``, which keeps lake-at-rest exact when feature tails
+    reach the inflow column. 1D backends ignore it.
     """
 
     kind: BoundaryKind
     eta_signal: Callable[[float], float] | None = None
     h_rest: float | None = None
+    water_level: float | None = None
 
     def __post_init__(self) -> None:
         if self.kind == "incident_wave" and (self.eta_signal is None or self.h_rest is None):
@@ -110,5 +117,67 @@ class SimResult:
 
     @property
     def ok(self) -> bool:
-        """Finite everywhere (the builder drops the rare unstable case)."""
-        return bool(np.isfinite(self.eta).all() and np.isfinite(self.u).all())
+        """Finite everywhere (the builder drops the rare unstable case).
+
+        ``v`` is checked when present (2D); it is None in every 1D result.
+        """
+        return bool(
+            np.isfinite(self.eta).all()
+            and np.isfinite(self.u).all()
+            and (self.v is None or np.isfinite(self.v).all())
+        )
+
+
+# =========================================================================== #
+# 2D contracts (additive; 1D classes above are untouched and in production).
+# ``BoundarySpec`` and ``SimResult`` are shared between 1D and 2D: SimResult
+# already carries optional ``y`` / ``v`` fields, filled by 2D backends.
+# =========================================================================== #
+
+
+@dataclass(frozen=True)
+class CaseSpec2D:
+    """Full parametric description of one 2D case."""
+
+    bathymetry: BathymetryField2D
+    forcing: WaveForcing  # incident train; side maps to the x_lower/x_upper edge
+    water_level: float
+    spring_neap: float
+    difficulty: Difficulty
+    seed: int
+    score: float  # provisional 2D score on the detrended bed
+    components: dict[str, float] = field(default_factory=dict)
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "difficulty": self.difficulty,
+            "seed": self.seed,
+            "score": self.score,
+            "slope": self.bathymetry.slope,
+            "n_features": len(self.bathymetry.features),
+            "feature_kinds": [f.kind for f in self.bathymetry.features],
+            "water_level": self.water_level,
+            "spring_neap": self.spring_neap,
+            "inflow_side": self.forcing.side,
+            "wave_amps": list(self.forcing.amps),
+            "wave_periods": list(self.forcing.periods),
+            **{f"score_{k}": v for k, v in self.components.items()},
+        }
+
+
+@dataclass(frozen=True)
+class SimulationProblem2D:
+    """One discretised 2D run. Field arrays are ``(Ny, Nx)`` (row = y);
+    backends translate to their internal layout. One :class:`BoundarySpec`
+    per edge; ``incident_wave`` is supported on the x edges (plane wave at
+    normal incidence)."""
+
+    grid: Grid2D
+    zb: np.ndarray  # (Ny, Nx) bed elevation
+    h0: np.ndarray  # (Ny, Nx) initial depth
+    hu0: np.ndarray  # (Ny, Nx) initial x-discharge
+    hv0: np.ndarray  # (Ny, Nx) initial y-discharge
+    bc_x_lower: BoundarySpec
+    bc_x_upper: BoundarySpec
+    bc_y_lower: BoundarySpec
+    bc_y_upper: BoundarySpec

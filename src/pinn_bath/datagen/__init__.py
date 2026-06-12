@@ -21,46 +21,63 @@ from pinn_bath.datagen.bathymetry import (
     SLOPE_RANGE,
     TIERS,
     BathymetryField,
+    BathymetryField2D,
     BathymetrySampler,
+    BathymetrySampler2D,
     Difficulty,
     Feature,
+    Feature2D,
     Tier,
     difficulty_components,
+    difficulty_components_2d,
     difficulty_score,
 )
 from pinn_bath.datagen.cases import (
     BoundarySpec,
     CaseSpec,
+    CaseSpec2D,
     SimResult,
     SimulationProblem,
+    SimulationProblem2D,
 )
 from pinn_bath.datagen.environments.base import Environment
 from pinn_bath.datagen.environments.fjord1d import IncidentWaveFjord1D
+from pinn_bath.datagen.environments.fjord2d import IncidentWaveFjord2D
 from pinn_bath.datagen.forcing import ForcingSampler, TidalState, WaveForcing
-from pinn_bath.datagen.grids import Grid1D
+from pinn_bath.datagen.grids import Grid1D, Grid2D
 from pinn_bath.datagen.solvers.base import SolverBackend
 from pinn_bath.datagen.solvers.pyclaw1d import PyClawSWE1D
+from pinn_bath.datagen.solvers.pyclaw2d import PyClawSWE2D
 
 __all__ = [
     "SLOPE_RANGE",
     "TIERS",
     "BathymetryField",
+    "BathymetryField2D",
     "BathymetrySampler",
+    "BathymetrySampler2D",
     "BoundarySpec",
     "CaseSpec",
+    "CaseSpec2D",
     "Difficulty",
     "Environment",
     "Feature",
+    "Feature2D",
     "ForcingSampler",
     "Grid1D",
+    "Grid2D",
     "IncidentWaveFjord1D",
+    "IncidentWaveFjord2D",
     "PyClawSWE1D",
+    "PyClawSWE2D",
     "SimResult",
     "SimulationProblem",
+    "SimulationProblem2D",
     "SolverBackend",
     "TidalState",
     "Tier",
     "WaveForcing",
     "difficulty_components",
+    "difficulty_components_2d",
     "difficulty_score",
 ]

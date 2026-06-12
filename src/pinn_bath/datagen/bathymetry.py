@@ -272,3 +272,172 @@ def difficulty_score(components: dict[str, float]) -> float:
         + 0.31 * min(components["bandwidth"] * 4.0, 1.0)
         + 0.25 * min(components["sign_changes"] / 6.0, 1.0)
     )
+
+
+# =========================================================================== #
+# 2D extension (additive; the 1D classes above are untouched and in
+# production). Same tier tables, slope range and deep-water cap logic; the
+# features become rotated anisotropic Gaussians: elongation ~ 1 reads as a
+# seamount / depression, elongation >> 1 as a ridge / trench.
+# =========================================================================== #
+
+Kind2D = Literal["seamount", "ridge"]
+
+# Ridge major/minor axis ratio range (seamounts are isotropic, ratio 1).
+RIDGE_ELONGATION: tuple[float, float] = (2.5, 5.0)
+
+
+@dataclass(frozen=True)
+class Feature2D:
+    kind: Kind2D
+    amplitude: float  # signed; >0 toward the surface, <0 deeper
+    cx: float
+    cy: float
+    width: float  # minor-axis Gaussian sigma [m] (tier "width" ranges)
+    elongation: float = 1.0  # major/minor ratio (1 = seamount, >1 = ridge)
+    theta: float = 0.0  # major-axis orientation [rad]
+
+
+def feature2d_profile(f: Feature2D, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+    """Rotated anisotropic Gaussian on the cell-centre meshgrid."""
+    ct, st = np.cos(f.theta), np.sin(f.theta)
+    xr = (X - f.cx) * ct + (Y - f.cy) * st  # along the major axis
+    yr = -(X - f.cx) * st + (Y - f.cy) * ct  # along the minor axis
+    w_major = f.width * f.elongation
+    return f.amplitude * np.exp(-((xr / w_major) ** 2) - ((yr / f.width) ** 2))
+
+
+@dataclass(frozen=True)
+class BathymetryField2D:
+    """2D bed: linear trend dipping in x plus rotated Gaussian features."""
+
+    features: tuple[Feature2D, ...]
+    slope: float = 0.0  # background gradient d(zb)/dx [m/m] (x only)
+    x_mid: float = 0.0  # trend pivot
+
+    def trend(self, X: np.ndarray) -> np.ndarray:
+        return self.slope * (np.asarray(X, dtype=float) - self.x_mid)
+
+    def detrended(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+        zb = np.zeros_like(np.asarray(X, dtype=float))
+        for f in self.features:
+            zb = zb + feature2d_profile(f, X, Y)
+        return zb
+
+    def profile(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+        return self.trend(X) + self.detrended(X, Y)
+
+
+@dataclass(frozen=True)
+class BathymetrySampler2D:
+    """2D analogue of :class:`BathymetrySampler` (same tiers / slope / cap).
+
+    Each feature is a seamount (isotropic) with probability ``seamount_prob``,
+    otherwise a ridge (elongated, random orientation). The deep-water cap is
+    enforced pointwise against the x-trend exactly as in 1D.
+    """
+
+    tiers: Mapping[Difficulty, Tier] = None  # type: ignore[assignment]
+    slope_range: tuple[float, float] = SLOPE_RANGE
+    margin: float = 4.0  # feature centres stay this far from every edge
+    seamount_prob: float = 0.5
+    ridge_elongation: tuple[float, float] = RIDGE_ELONGATION
+
+    def __post_init__(self) -> None:
+        if self.tiers is None:
+            object.__setattr__(self, "tiers", TIERS)
+
+    def sample(
+        self,
+        difficulty: Difficulty,
+        rng: np.random.Generator,
+        X: np.ndarray,
+        Y: np.ndarray,
+        *,
+        sea_level: float,
+        max_bed_elevation: float,
+    ) -> BathymetryField2D:
+        tier = self.tiers[difficulty]
+        xlo, xhi = float(X.min()), float(X.max())
+        ylo, yhi = float(Y.min()), float(Y.max())
+
+        slope = float(rng.uniform(*self.slope_range))
+        x_mid = 0.5 * (xlo + xhi)
+
+        k = int(rng.choice(tier.k_choices))
+        feats: list[Feature2D] = []
+        for _ in range(k):
+            kind: Kind2D = "seamount" if rng.random() < self.seamount_prob else "ridge"
+            mag = rng.uniform(*tier.amp_frac) * sea_level
+            sign = 1.0 if (not tier.allow_holes or rng.random() < 0.5) else -1.0
+            elong = 1.0 if kind == "seamount" else float(rng.uniform(*self.ridge_elongation))
+            feats.append(
+                Feature2D(
+                    kind=kind,
+                    amplitude=sign * mag,
+                    cx=rng.uniform(xlo + self.margin, xhi - self.margin),
+                    cy=rng.uniform(ylo + self.margin, yhi - self.margin),
+                    width=rng.uniform(*tier.width),
+                    elongation=elong,
+                    theta=float(rng.uniform(0.0, np.pi)),
+                )
+            )
+        field = BathymetryField2D(features=tuple(feats), slope=slope, x_mid=x_mid)
+
+        if not tier.allow_drying:
+            field = self._cap_features(field, X, Y, max_bed_elevation)
+        return field
+
+    def _cap_features(
+        self, field: BathymetryField2D, X: np.ndarray, Y: np.ndarray, cap: float
+    ) -> BathymetryField2D:
+        """Rescale feature amplitudes so ``trend + features <= cap`` pointwise."""
+        headroom = cap - field.trend(X)
+        if headroom.min() <= 0.0:
+            raise ValueError(
+                f"slope {field.slope:+.4f} leaves no feature headroom under the "
+                f"deep-water cap {cap:.3f}; shrink slope_range or raise the cap"
+            )
+        feat = field.detrended(X, Y)
+        pos = feat > 0
+        if not np.any(feat[pos] > headroom[pos]):
+            return field
+        scale = float(np.min(headroom[pos] / feat[pos]))
+        return replace(
+            field,
+            features=tuple(replace(f, amplitude=f.amplitude * scale) for f in field.features),
+        )
+
+
+def difficulty_components_2d(zb_detrended: np.ndarray, sea_level: float) -> dict[str, float]:
+    """2D analogue of :func:`difficulty_components` (PROVISIONAL).
+
+    Same three descriptors on the detrended ``(Ny, Nx)`` field: relative
+    amplitude, spectral bandwidth (energy-weighted mean *radial* wavenumber,
+    normalised by the maximum resolvable radius) and sign changes counted on
+    the central x- and y-transects. Weights/caps reuse the 1D score so easy /
+    medium / hard land in comparable ranges; to be re-calibrated when the
+    production 2D bank is designed (Phase 2).
+    """
+    H0 = float(sea_level)
+    zb = np.asarray(zb_detrended, dtype=float)
+    ny, nx = zb.shape
+    amp_ratio = float(np.max(np.abs(zb)) / H0)
+    emergent_frac = float(np.mean(zb > H0))
+    zc = zb - zb.mean()
+    spec = np.abs(np.fft.rfft2(zc)) ** 2
+    ky = np.fft.fftfreq(ny, d=1.0 / ny)  # index units, matches 1D convention
+    kx = np.arange(spec.shape[1])
+    kr = np.sqrt(ky[:, None] ** 2 + kx[None, :] ** 2)
+    kr_max = float(np.sqrt((ny // 2) ** 2 + (spec.shape[1] - 1) ** 2))
+    bandwidth = float((spec * kr).sum() / (spec.sum() + 1e-12) / max(kr_max, 1.0))
+    sign_changes = 0
+    for transect in (zc[ny // 2, :], zc[:, nx // 2]):
+        live = transect[np.abs(transect) > 0.02 * H0]
+        sign_changes += int(np.count_nonzero(np.diff(np.sign(live))))
+    return {
+        "amp_ratio": amp_ratio,
+        "emergent_frac": emergent_frac,
+        "bandwidth": bandwidth,
+        "sign_changes": float(sign_changes),
+    }
