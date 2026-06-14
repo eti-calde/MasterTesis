@@ -61,12 +61,15 @@ junto a un banco de pruebas realista de oleaje incidente en aguas profundas
 (inspirado en fiordos del sur de Chile) con ejes de excitación tipo marea; y
 (iii) el estudio del residuo SWE como regularizador y su efecto sobre la
 generalización OOD. El operador recupera batimetrías de prueba más difíciles
-que cualquiera de entrenamiento con un $\RMSE$ de $\sim$2.4\,cm (frente a
-$\sim$3\,mm in-distribution). En este régimen realista, ni aumentar la capacidad
-del modelo ($5\times$ más parámetros) ni el regularizador físico mejoran la
-generalización OOD: la física es neutra para el operador pequeño y perjudicial
-para el mediano. El límite dominante es la complejidad batimétrica, con una
-degradación abrupta en el decil más difícil.
+que cualquiera de entrenamiento con un $\RMSE$ de $\sim$1\,cm (frente a
+$\sim$1.7\,mm in-distribution), una brecha de generalización de $\approx$5.7$\times$.
+Sobre este banco, un regularizador físico ligero (el residuo de continuidad)
+mejora la generalización OOD del operador pequeño de forma modesta pero
+consistente ($\approx$3\%), y evidencia preliminar indica que aumentar la
+capacidad (operador mediano, $5.3\times$ parámetros) también ayuda ($\approx$14\%
+mejor en OOD). El límite dominante sigue siendo la complejidad batimétrica: el
+error es plano hasta un umbral de dificultad y luego crece de forma abrupta (el
+decil más difícil $\approx$5.5$\times$ el más fácil).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -339,7 +342,8 @@ convoluciones 2D con bloques residuales y normalización por grupos que preserva
 la resolución espacial; el eje temporal se colapsa por \emph{pooling} promedio; y
 un \emph{decoder} de convoluciones 1D produce $\zb(x)$. El \emph{tamaño} del
 operador (ancho de canales y número de bloques) es el eje del estudio de
-escalamiento, de $0.28$\,M a $6.2$\,M de parámetros.
+escalamiento; en este trabajo se comparan el operador \emph{pequeño}
+($0.28$\,M de parámetros) y el \emph{mediano} ($1.48$\,M).
 
 \subsection{Residuo físico y función de pérdida}
 Como $\eta$ y $u$ son datos sobre una grilla, el residuo SWE se evalúa por
@@ -365,126 +369,118 @@ in-distribution. Para aislar las variables de estudio, todas las
 configuraciones comparten dataset, particiones, presupuesto y hardware (GPU
 NVIDIA RTX 5090, precisión TF32). Se barre
 $\text{tamaño}\times\lambda_{\text{phys}}\in\{0,10^{-3},10^{-2},10^{-1}\}$ sobre
-múltiples semillas, reportando media $\pm$ desviación estándar. Las métricas
-($\RMSE$, $\NRMSE$, $R^2$ de $\zb$) se reportan por partición y en función del
-score de dificultad, siendo el indicador central la \emph{brecha de
-generalización} entre el error in-distribution y el OOD.
+$5$ semillas, reportando media $\pm$ desviación estándar. El indicador central
+es el $\RMSE$ de $\zb$ por partición y en función del score de dificultad, junto
+con la \emph{brecha de generalización} entre el error in-distribution y el OOD.
 
 % =====================================================================
 \section{Resultados}
 \label{sec:results}
 
-\TODO{Los resultados de esta sección corresponden al banco v1 (dominio de
-$10$\,m, $T_m\in[2.5,4.5]$\,s, $\approx6500$ casos, sin pendiente de fondo);
-deben regenerarse sobre el banco v2 de la Sección~\ref{sec:method}.}
+\TODO{Resultados del banco v2 (Sección~\ref{sec:method}). El operador
+\emph{pequeño} está completo ($4\times5$ configuraciones); del \emph{mediano}
+se reporta evidencia preliminar ($\lambda_{\text{phys}}=0$, $3$ semillas), con
+el barrido completo en curso. Falta regenerar la figura de reconstrucciones
+desde los checkpoints v2.}
 
-El barrido comprende $80$ configuraciones: dos tamaños de operador (pequeño,
-$0.28$\,M de parámetros; mediano, $1.48$\,M) $\times$ cuatro pesos
-$\lambda_{\text{phys}}\in\{0,10^{-3},10^{-2},10^{-1}\}$ $\times$ $10$ semillas,
+El barrido del operador pequeño comprende $20$ configuraciones: cuatro pesos
+$\lambda_{\text{phys}}\in\{0,10^{-3},10^{-2},10^{-1}\}$ $\times$ $5$ semillas,
 entrenadas $150$ épocas en una GPU NVIDIA RTX~5090. La Tabla~\ref{tab:results}
-resume el $\RMSE$ de $\zb$ por partición. Las comparaciones del efecto físico
-son \emph{pareadas por semilla}: como la semilla fija la inicialización y el
-orden de los lotes, dos configuraciones que sólo difieren en
-$\lambda_{\text{phys}}$ comparten todo lo demás, lo que habilita una prueba
-pareada (más potente que una no pareada).
+resume el $\RMSE$ de $\zb$ por partición. Las comparaciones (efecto físico y
+escalamiento) son \emph{pareadas por semilla}: como la semilla fija la
+inicialización y el orden de los lotes, dos configuraciones que sólo difieren
+en una variable comparten todo lo demás, lo que habilita una prueba pareada
+(más potente que una no pareada).
 
 \begin{table}[t]
 \centering
-\caption{$\RMSE$ de $\zb$ [m] (media$\pm$desv.\ est.\ sobre $10$ semillas), por
-tamaño de operador y peso del residuo de continuidad $\lambda_{\text{phys}}$.
-\emph{val}: validación in-distribution (fácil+medio); \emph{OOD}: prueba fuera
-de distribución (difícil, no vista). En negrita, el mejor OOD por tamaño.}
+\caption{$\RMSE$ de $\zb$ [mm] (media$\pm$desv.\ est.), por tamaño de operador
+y peso del residuo de continuidad $\lambda_{\text{phys}}$. \emph{val}:
+validación in-distribution (fácil+medio); \emph{OOD}: prueba fuera de
+distribución (difícil, no vista). Pequeño: $5$ semillas; mediano: $3$ semillas,
+$\lambda_{\text{phys}}=0$ (preliminar; resto en curso). En negrita, el mejor
+OOD del pequeño.}
 \label{tab:results}
 \begin{tabular}{llcc}
 \toprule
 Tamaño & $\lambda_{\text{phys}}$ & val & OOD \\
 \midrule
 \multirow{4}{*}{pequeño ($0.28$\,M)}
- & $0$       & $0.0032\pm0.0004$ & $0.0242\pm0.0049$ \\
- & $10^{-3}$ & $0.0032\pm0.0005$ & $0.0241\pm0.0046$ \\
- & $10^{-2}$ & $0.0032\pm0.0006$ & $\mathbf{0.0237\pm0.0044}$ \\
- & $10^{-1}$ & $0.0034\pm0.0006$ & $0.0238\pm0.0049$ \\
+ & $0$       & $1.70\pm0.03$ & $9.67\pm0.51$ \\
+ & $10^{-3}$ & $1.69\pm0.04$ & $9.37\pm0.39$ \\
+ & $10^{-2}$ & $1.70\pm0.04$ & $9.53\pm0.45$ \\
+ & $10^{-1}$ & $1.70\pm0.03$ & $\mathbf{9.35\pm0.34}$ \\
 \midrule
-\multirow{4}{*}{mediano ($1.48$\,M)}
- & $0$       & $0.0035\pm0.0009$ & $\mathbf{0.0277\pm0.0039}$ \\
- & $10^{-3}$ & $0.0034\pm0.0009$ & $0.0283\pm0.0035$ \\
- & $10^{-2}$ & $0.0036\pm0.0009$ & $0.0280\pm0.0051$ \\
- & $10^{-1}$ & $0.0035\pm0.0008$ & $0.0293\pm0.0039$ \\
+mediano ($1.48$\,M) & $0$ & $1.31\pm0.04$ & $8.30\pm0.28$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Recuperación y generalización}
 El operador supervisado pequeño ($\lambda_{\text{phys}}=0$) recupera la
-batimetría con un $\RMSE$ de $0.0032$\,m ($\sim$3\,mm) in-distribution y de
-$0.0242$\,m ($\sim$2.4\,cm) en el conjunto OOD, casos \emph{difíciles} más
-complejos que cualquiera de entrenamiento, sobre relieves de hasta
-$\sim$0.5\,m. La Fig.~\ref{fig:recovery} muestra reconstrucciones en cuatro
-casos OOD de dificultad creciente: fieles en los moderados y con degradación en
-el más difícil. La brecha de generalización (val$\to$OOD) es de un factor
-$\approx 7.5$.
+batimetría con un $\RMSE$ de $1.70$\,mm in-distribution y de $9.67$\,mm
+($\sim$1\,cm) en el conjunto OOD, casos \emph{difíciles} más complejos que
+cualquiera de entrenamiento, sobre relieves de hasta $\sim$0.5\,m. La brecha de
+generalización (val$\to$OOD) es de un factor $\approx 5.7$.
+\TODO{Figura de reconstrucciones $\hat\zb$ vs $\zb$ en casos OOD: regenerar con
+\texttt{scripts/plot\_recovery.py} desde los checkpoints v2 (no disponibles en
+esta máquina).}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/operator_recovery.png}
-\caption{Recuperación de batimetría en cuatro casos OOD (difíciles, no vistos)
-de dificultad creciente. Negro: fondo verdadero (solver); azul/naranja:
-operador pequeño/mediano. La reconstrucción es fiel salvo en el caso más
-difícil (abajo), donde ambos suavizan un hoyo profundo y angosto.}
-\label{fig:recovery}
-\end{figure}
+\subsection{Efecto del regularizador físico}
+Sobre el banco v2, el residuo SWE como regularizador \emph{mejora} levemente la
+generalización OOD del operador pequeño. El mejor peso es
+$\lambda_{\text{phys}}=10^{-1}$ ($9.35$\,mm, $-3.3\%$ frente al supervisado
+puro; prueba pareada $p=0.037$, $d_z=-1.38$); $\lambda_{\text{phys}}=10^{-3}$
+da una mejora equivalente ($9.37$\,mm, $-3.1\%$, $p=0.038$, $d_z=-1.37$) y
+$\lambda_{\text{phys}}=10^{-2}$ una intermedia no significativa ($-1.4\%$,
+$p=0.11$). La mejora es pequeña y aproximadamente independiente de
+$\lambda_{\text{phys}}$ en este rango, y consistente en dirección entre
+semillas, aunque con $5$ semillas la prueba no paramétrica queda al límite de
+su resolución (Wilcoxon $p\approx0.06$--$0.13$). Una lectura es que el banco v2,
+con una ventana de observación más larga y mejor resuelta, vuelve al residuo de
+continuidad más informativo que en bancos previos más pobres, donde el término
+físico era neutro; conviene confirmarlo con más semillas.
 
-\subsection{Escalamiento del operador}
-Aumentar la capacidad no mejora la generalización. El operador mediano
-($5.3\times$ más parámetros) iguala el error in-distribution ($0.0035$ vs
-$0.0032$) pero generaliza un $\approx 14\%$ \emph{peor} en OOD ($0.0277$ vs
-$0.0242$; prueba pareada $p\approx0.09$, $d_z=0.59$). El beneficio de la
-capacidad satura (y tiende a revertirse); la mejor configuración global es
-el operador pequeño con $\lambda_{\text{phys}}=10^{-2}$ ($0.0237$\,m). La
-Fig.~\ref{fig:bars} compara el OOD de ambos tamaños frente a
-$\lambda_{\text{phys}}$.
+\subsection{Escalamiento del operador (preliminar)}
+Evidencia preliminar indica que aumentar la capacidad \emph{sí} ayuda en este
+banco. El operador mediano ($1.48$\,M, $5.3\times$ parámetros;
+$\lambda_{\text{phys}}=0$, $3$ semillas) mejora tanto in-distribution
+($1.31$ vs $1.70$\,mm) como en OOD ($8.30$ vs $9.67$\,mm, $-14.0\%$; prueba
+pareada $p=0.020$, $d_z=-3.98$). El tamaño de muestra es pequeño ($n=3$) y el
+barrido completo del mediano (todos los $\lambda_{\text{phys}}$ y más semillas)
+está en curso, por lo que esta es una conclusión \emph{provisional}. La
+Fig.~\ref{fig:bars} compara el OOD del pequeño frente a $\lambda_{\text{phys}}$
+y el del mediano supervisado.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/operator_ood_bars.png}
-\caption{$\RMSE$ OOD (media$\pm$desv.\ est.\ sobre $10$ semillas) por tamaño de
-operador y peso físico $\lambda_{\text{phys}}$. El tamaño mediano no mejora al
-pequeño, y el peso físico no reduce el error en ningún caso.}
+\caption{$\RMSE$ OOD (media$\pm$desv.\ est.) del operador pequeño por peso
+físico $\lambda_{\text{phys}}$ ($5$ semillas) y del mediano supervisado
+($\lambda_{\text{phys}}=0$, $3$ semillas, preliminar). El peso físico reduce
+levemente el error del pequeño; el mediano queda por debajo de todas las
+configuraciones del pequeño.}
 \label{fig:bars}
 \end{figure}
 
-\subsection{Efecto del regularizador físico}
-El residuo SWE como regularizador \emph{no} mejora la generalización OOD. Para
-el operador pequeño el efecto es neutro (mejor caso $\lambda_{\text{phys}}=
-10^{-2}$, $-2.1\%$, no significativo, $p=0.48$). Para el mediano es
-\emph{perjudicial}: el supervisado puro ($\lambda_{\text{phys}}=0$) es el mejor,
-y $\lambda_{\text{phys}}=10^{-1}$ empeora significativamente el OOD ($+6.0\%$,
-prueba pareada $p=0.025$, Wilcoxon $p=0.027$, $d_z=0.85$). Una lectura coherente
-es que, en este régimen realista de aguas profundas, la señal supervisada ya es
-suficientemente informativa, de modo que el residuo de continuidad aporta sesgo
-en lugar de información (y más aún a mayor capacidad). Cabe contrastar con
-experimentos previos en un régimen seco-mojado, donde el término físico sí
-ayudaba al operador pequeño; ese régimen patológico se excluyó por realismo
-(Sección~\ref{sec:method}), y con él desaparece el escenario donde el
-regularizador aportaba.
-
 \subsection{Generalización acotada por la dificultad}
 El error crece de forma monótona con el \emph{score} de dificultad (correlación
-de Spearman $\rho\approx0.68$ en ambos tamaños). La Fig.~\ref{fig:cliff} lo
-muestra: el error es estable hasta un score $\approx 0.57$ y luego sube
-abruptamente: el decil más difícil tiene entre $10\times$ (pequeño) y
-$11.5\times$ (mediano) el error del más fácil. Este ``acantilado'' lo causa
-la complejidad espacial (muchos relieves angostos), no la emergencia del fondo
-(excluida por diseño). La curva es prácticamente idéntica con y sin el término
-físico, lo que confirma que éste tampoco ayuda en la cola difícil.
+de Spearman $\rho\approx0.53$, $p<10^{-3}$, sobre los $15\,000$ casos OOD de las
+$5$ semillas). La Fig.~\ref{fig:cliff} lo muestra: el error es estable hasta un
+score $\approx 0.57$ y luego sube de forma abrupta; el decil más difícil tiene
+$\approx 5.5\times$ el error del más fácil ($16.4$ vs $3.0$\,mm). Este
+``acantilado'' lo causa la complejidad espacial (muchos relieves angostos), no
+la emergencia del fondo (excluida por diseño). Las curvas con y sin término
+físico se superponen, de modo que la leve mejora del regularizador actúa de
+forma pareja sobre todo el rango y no rescata específicamente la cola difícil.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/error_vs_score.png}
 \caption{$\RMSE$ medio por caso vs.\ \emph{score} de dificultad en el test OOD
-(operador pequeño). El error es plano hasta score $\approx 0.57$ y luego crece
-de forma abrupta; las curvas con y sin física se superponen. La línea punteada
-marca el error in-distribution de referencia.}
+(operador pequeño, $5$ semillas). El error es plano hasta score $\approx 0.6$ y
+luego crece de forma abrupta; las curvas con y sin física se superponen. La
+línea punteada marca el error in-distribution de referencia.}
 \label{fig:cliff}
 \end{figure}
 
@@ -496,15 +492,19 @@ Planteamos la inversión de batimetría como el aprendizaje de un operador inver
 amortizado sobre una distribución de fondos, evaluado fuera de distribución por
 dificultad en un banco realista de oleaje incidente en dominio abierto. El
 operador invierte fondos no vistos y más difíciles que los de entrenamiento con
-un $\RMSE$ de $\sim$2.4\,cm. En este régimen realista de aguas profundas, ni el
-escalamiento (el operador mediano no supera al pequeño) ni el regularizador
-físico SWE (neutro para el pequeño, perjudicial para el mediano) mejoran la
-generalización OOD; el límite dominante es la complejidad batimétrica, con una
-degradación abrupta en los casos más difíciles. Estos resultados reubican el rol
-de la regularización física: útil en regímenes patológicos (seco-mojado) pero
-redundante cuando la señal supervisada es suficiente. Como trabajo futuro
-proyectamos la inversión sobre datos reales de fiordos (campaña ADCP de
-Reloncaví) y la extensión a 2D.
+un $\RMSE$ de $\sim$1\,cm, una brecha de generalización de $\approx$5.7$\times$
+respecto al error in-distribution. Sobre este banco, un regularizador físico
+ligero (el residuo de continuidad SWE) mejora de forma modesta pero consistente
+la generalización del operador pequeño ($\approx$3\%), y evidencia preliminar
+indica que aumentar la capacidad también ayuda (el operador mediano generaliza
+$\approx$14\% mejor); ambos efectos contrastan con bancos previos más pobres,
+donde el término físico era neutro y la capacidad no rendía, lo que sugiere que
+una ventana de observación más rica vuelve a ambos provechosos. El límite
+dominante, sin embargo, sigue siendo la complejidad batimétrica: el error es
+plano hasta un umbral de dificultad y luego se degrada de forma abrupta. Como
+trabajo futuro proyectamos completar el barrido del operador mediano, la
+extensión a 2D (en curso) y la inversión sobre datos reales de fiordos (campaña
+ADCP de Reloncaví).
 
 % =====================================================================
 \section*{Agradecimientos}
